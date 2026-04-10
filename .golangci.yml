@@ -1,0 +1,84 @@
+---
+version: "2"
+linters:
+  default: standard
+  enable:
+    - dupword
+    - dupl
+    - durationcheck
+    - errorlint
+    - errchkjson
+    - misspell
+    - nestif
+    - iface
+    - unconvert
+    - revive
+    - wsl_v5
+    - tagliatelle
+    - testifylint
+  disable:
+    - staticcheck
+    - unused
+    - wsl
+    - err113
+    - depguard
+    - exhaustruct
+
+  settings:
+    gocyclo:
+      min-complexity: 15
+
+    revive:
+      enable-all-rules: true
+      severity: warning
+      rules:
+        # https://github.com/mgechev/revive/blob/HEAD/RULES_DESCRIPTIONS.md#add-constant
+        - name: add-constant
+          severity: warning
+          disabled: true
+          exclude: [""]
+        - name: exported
+          disabled: true
+
+        - name: line-length-limit
+          severity: warning
+          disabled: false
+          exclude: [""]
+          arguments: [120]
+
+        # https://github.com/mgechev/revive/blob/HEAD/RULES_DESCRIPTIONS.md#cognitive-complexity
+        - name: cognitive-complexity
+          severity: warning
+          disabled: false
+          exclude: [""]
+          arguments: [15]
+
+        # https://github.com/mgechev/revive/blob/HEAD/RULES_DESCRIPTIONS.md#cyclomatic
+        - name: cyclomatic
+          severity: warning
+          disabled: false
+          exclude: [""]
+          arguments: [15]
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+        path: _test.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
