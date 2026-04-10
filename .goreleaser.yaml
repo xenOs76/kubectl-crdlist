@@ -1,0 +1,99 @@
+---
+version: 2
+project_name: kubectl-crdlist
+dist: ./dist/
+
+force_token: github
+env_files:
+  gitea_token: ~/nope
+  github_token: ~/nope
+
+release:
+  disable: false
+  skip_upload: false
+  github:
+    owner: xenos76
+    name: kubectl-crdlist
+
+before:
+  hooks:
+    - go mod download
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/xenos76/kubectl-crdlist/cmd.Version={{.Version}}
+
+archives:
+  - name_template: >-
+      {{ .ProjectName }}_{{- .Version }}_{{- title .Os }}_{{- .Arch }}
+    wrap_in_directory: false
+    formats:
+      - tar.gz
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+nfpms:
+  - maintainer: Zeno Belli <xeno@os76.xyz>
+    vendor: xenos76 on Github
+    homepage: https://github.com/xenOs76/kubectl-crdlist
+    description: kubectl-crdlist, CRD visualization plugin for Kubernetes.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    release: "1"
+
+homebrew_casks:
+  - repository:
+      owner: xenos76
+      name: homebrew-tap
+    homepage: https://github.com/xenOs76/kubectl-crdlist
+    description: kubectl-crdlist, CRD visualization plugin for Kubernetes.
+    license: MIT
+    skip_upload: false
+
+nix:
+  - name: kubectl-crdlist
+    repository:
+      owner: xenos76
+      name: nur-packages
+    homepage: https://github.com/xenOs76/kubectl-crdlist
+    description: kubectl-crdlist
+    path: pkgs/kubectl-crdlist/default.nix
+    license: mit
+    # extra_install: |-
+    #   # Add completions or manpages here if available in the future
+
+krews:
+  - name: crdlist
+    commit_msg_template: "Krew plugin update for {{ .ProjectName }} version {{ .Tag }}"
+    homepage: https://github.com/xenOs76/kubectl-crdlist
+    description: "kubectl-crdlist, CRD visualization plugin for Kubernetes."
+    short_description: "kubectl-crdlist, CRD visualization plugin for Kubernetes."
+    skip_upload: false
+    repository:
+      owner: xenos76
+      name: krews
+      branch: main
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
