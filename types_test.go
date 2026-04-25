@@ -12,62 +12,47 @@ func TestInitialModel(t *testing.T) {
 		wantLoading bool
 		wantNS      string
 	}{
-		{
-			name:        "default namespace",
-			namespace:   "default",
-			wantState:   stateCRDList,
-			wantLoading: true,
-			wantNS:      "default",
-		},
-		{
-			name:        "custom namespace",
-			namespace:   "kube-system",
-			wantState:   stateCRDList,
-			wantLoading: true,
-			wantNS:      "kube-system",
-		},
-		{
-			name:        "empty namespace",
-			namespace:   "",
-			wantState:   stateCRDList,
-			wantLoading: true,
-			wantNS:      "",
-		},
-		{
-			name:        "namespace with dash",
-			namespace:   "my-namespace",
-			wantState:   stateCRDList,
-			wantLoading: true,
-			wantNS:      "my-namespace",
-		},
+		{"default namespace", "default", stateCRDList, true, "default"},
+		{"custom namespace", "kube-system", stateCRDList, true, "kube-system"},
+		{"empty namespace", "", stateCRDList, true, ""},
+		{"namespace with dash", "my-namespace", stateCRDList, true, "my-namespace"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a mock k8sClient for testing
 			mockClient := &k8sClient{}
-
 			got := initialModel(mockClient, tt.namespace)
-
-			if got.state != tt.wantState {
-				t.Errorf("state = %v, want %v", got.state, tt.wantState)
-			}
-
-			if got.loading != tt.wantLoading {
-				t.Errorf("loading = %v, want %v", got.loading, tt.wantLoading)
-			}
-
-			if got.currentNamespace != tt.wantNS {
-				t.Errorf("currentNamespace = %q, want %q", got.currentNamespace, tt.wantNS)
-			}
-
-			if got.allNamespaces != false {
-				t.Errorf("allNamespaces = %v, want false", got.allNamespaces)
-			}
-
-			if got.k8s != mockClient {
-				t.Errorf("k8s client not set correctly")
-			}
+			verifyInitialModel(t, &got, mockClient, expectedModel{tt.wantState, tt.wantLoading, tt.wantNS})
 		})
+	}
+}
+
+type expectedModel struct {
+	state   viewState
+	loading bool
+	ns      string
+}
+
+func verifyInitialModel(t *testing.T, got *model, mockClient *k8sClient, want expectedModel) {
+	t.Helper()
+
+	if got.state != want.state {
+		t.Errorf("state = %v, want %v", got.state, want.state)
+	}
+
+	if got.loading != want.loading {
+		t.Errorf("loading = %v, want %v", got.loading, want.loading)
+	}
+
+	if got.currentNamespace != want.ns {
+		t.Errorf("currentNamespace = %q, want %q", got.currentNamespace, want.ns)
+	}
+
+	if got.allNamespaces {
+		t.Errorf("allNamespaces = %v, want false", got.allNamespaces)
+	}
+
+	if got.k8s != mockClient {
+		t.Error("k8s client not set correctly")
 	}
 }

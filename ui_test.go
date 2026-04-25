@@ -12,6 +12,17 @@ import (
 	"k8s.io/client-go/dynamic/fake"
 )
 
+func assertModel(t *testing.T, m tea.Model) model {
+	t.Helper()
+
+	res, ok := m.(model)
+	if !ok {
+		t.Fatalf("expected model, got %T", m)
+	}
+
+	return res
+}
+
 func TestApplyFilterCRDList(t *testing.T) {
 	m := model{
 		state: stateCRDList,
@@ -190,7 +201,7 @@ func TestViewRendering(t *testing.T) {
 
 	out = m.View()
 	if !strings.Contains(out.Content, "Pod") {
-		t.Errorf("expected YAML view to contain YAML text")
+		t.Error("expected YAML view to contain YAML text")
 	}
 }
 
@@ -203,7 +214,7 @@ func TestUpdateMessages(t *testing.T) {
 		{group: "a", name: "a-crd"},
 	}
 	newModel, _ := m.Update(crdMsg)
-	mUpdated := newModel.(model)
+	mUpdated := assertModel(t, newModel)
 
 	if len(mUpdated.crds) != 2 || mUpdated.crds[0].group != "a" {
 		t.Errorf("expected CRDs to be loaded and sorted, got %v", mUpdated.crds)
@@ -214,7 +225,7 @@ func TestUpdateMessages(t *testing.T) {
 		{name: "res1"},
 	}
 	newModel, _ = mUpdated.Update(resMsg)
-	mUpdated = newModel.(model)
+	mUpdated = assertModel(t, newModel)
 
 	if len(mUpdated.resources) != 1 || mUpdated.resources[0].name != "res1" {
 		t.Errorf("expected resources to be loaded, got %v", mUpdated.resources)
@@ -223,7 +234,7 @@ func TestUpdateMessages(t *testing.T) {
 	// Test YAML loaded msg
 	yamlMsg := yamlLoadedMsg("test-yaml")
 	newModel, _ = mUpdated.Update(yamlMsg)
-	mUpdated = newModel.(model)
+	mUpdated = assertModel(t, newModel)
 
 	if mUpdated.selectedYAML != "test-yaml" {
 		t.Errorf("expected YAML to be loaded, got %s", mUpdated.selectedYAML)
@@ -232,10 +243,10 @@ func TestUpdateMessages(t *testing.T) {
 	// Test WindowSizeMsg
 	sizeMsg := tea.WindowSizeMsg{Width: 100, Height: 50}
 	newModel, _ = mUpdated.Update(sizeMsg)
-	mUpdated = newModel.(model)
+	mUpdated = assertModel(t, newModel)
 
 	if mUpdated.width != 100 || mUpdated.height != 50 {
-		t.Errorf("expected window size to update")
+		t.Error("expected window size to update")
 	}
 }
 
@@ -249,16 +260,16 @@ func TestHandleKeyPress(t *testing.T) {
 	// Test enter filter mode
 	msg := tea.KeyPressMsg{Text: "/", Code: '/'}
 	newModel, _ := m.Update(msg)
-	mUpdated := newModel.(model)
+	mUpdated := assertModel(t, newModel)
 
 	if mUpdated.mode != modeFiltering {
-		t.Errorf("expected mode to switch to filtering")
+		t.Error("expected mode to switch to filtering")
 	}
 
 	// Test type filter letter
 	msg = tea.KeyPressMsg{Text: "x", Code: 'x'}
 	newModel, _ = mUpdated.Update(msg)
-	mUpdated = newModel.(model)
+	mUpdated = assertModel(t, newModel)
 
 	if mUpdated.filter != "x" {
 		t.Errorf("expected filter to be 'x', got %s", mUpdated.filter)
@@ -267,29 +278,30 @@ func TestHandleKeyPress(t *testing.T) {
 	// Test backspace
 	msg = tea.KeyPressMsg{Code: tea.KeyBackspace}
 	newModel, _ = mUpdated.Update(msg)
-	mUpdated = newModel.(model)
+	mUpdated = assertModel(t, newModel)
 
 	if mUpdated.filter != "" {
-		t.Errorf("expected filter to be empty, got test")
+		t.Error("expected filter to be empty")
 	}
 
 	// Test escape from filter mode
 	msg = tea.KeyPressMsg{Code: tea.KeyEscape}
 	newModel, _ = mUpdated.Update(msg)
-	mUpdated = newModel.(model)
+	mUpdated = assertModel(t, newModel)
 
 	if mUpdated.mode != modeBrowsing {
-		t.Errorf("expected mode to switch to browsing")
+		t.Error("expected mode to switch to browsing")
 	}
 
 	// Test namespace toggle
 	mUpdated.state = stateResourceList
+
 	msg = tea.KeyPressMsg{Text: "n", Code: 'n'}
 	newModel, _ = mUpdated.Update(msg)
-	mUpdated = newModel.(model)
+	mUpdated = assertModel(t, newModel)
 
 	if !mUpdated.allNamespaces {
-		t.Errorf("expected allNamespaces to be true")
+		t.Error("expected allNamespaces to be true")
 	}
 }
 
@@ -475,7 +487,7 @@ func TestMoveDownYAMLView(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{
 				state:          stateYAMLView,
 				selectedYAML:   tt.yamlContent,
@@ -525,7 +537,7 @@ func TestHandleNamespaceToggle(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{
 				state:         tt.state,
 				allNamespaces: tt.allNamespaces,
@@ -535,7 +547,7 @@ func TestHandleNamespaceToggle(t *testing.T) {
 			}
 
 			newModel, _ := m.handleNamespaceToggle()
-			newM := newModel.(model)
+			newM := assertModel(t, newModel)
 
 			if newM.allNamespaces != tt.wantAllNamespaces {
 				t.Errorf("allNamespaces = %v, want %v", newM.allNamespaces, tt.wantAllNamespaces)
@@ -578,7 +590,7 @@ func TestHandleBrowsingKeys(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			defer func() {
 				if r := recover(); r != nil && tt.shouldNotPanic {
 					t.Errorf("handleBrowsingKeys panicked: %v", r)
@@ -642,7 +654,7 @@ func TestHighlightYAMLEdgeCases(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{}
 			result := m.highlightYAML(tt.yaml)
 
@@ -759,7 +771,7 @@ func TestListResourcesEdgeCases(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			scheme := runtime.NewScheme()
 			gvr := schema.GroupVersionResource{
 				Group:    "example.com",
@@ -788,7 +800,7 @@ func TestListResourcesEdgeCases(t *testing.T) {
 			resources, err := k.listResources(crd, tt.namespace)
 
 			if tt.wantErr && err == nil {
-				t.Errorf("expected error, got nil")
+				t.Error("expected error, got nil")
 			} else if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
@@ -863,63 +875,36 @@ func TestHandleEscapeEdgeCases(t *testing.T) {
 		wantMode      inputMode
 		wantFilter    string
 	}{
+		{"escape from filtering mode", stateCRDList, modeFiltering, "", "", stateCRDList, modeBrowsing, ""},
 		{
-			name:      "escape from filtering mode",
-			state:     stateCRDList,
-			mode:      modeFiltering,
-			wantState: stateCRDList,
-			wantMode:  modeBrowsing,
+			"escape from YAML view with group", stateYAMLView, modeBrowsing, "example.com", "",
+			stateGroupResourceList, modeBrowsing, "",
 		},
 		{
-			name:          "escape from YAML view with group",
-			state:         stateYAMLView,
-			selectedGroup: "example.com",
-			wantState:     stateGroupResourceList,
+			"escape from YAML view without group", stateYAMLView, modeBrowsing, "", "",
+			stateResourceList, modeBrowsing, "",
 		},
 		{
-			name:      "escape from YAML view without group",
-			state:     stateYAMLView,
-			wantState: stateResourceList,
+			"escape from resource list", stateResourceList, modeBrowsing, "", "",
+			stateCRDList, modeBrowsing, "",
 		},
 		{
-			name:       "escape from resource list",
-			state:      stateResourceList,
-			wantState:  stateCRDList,
-			wantFilter: "",
+			"escape from group resource list", stateGroupResourceList, modeBrowsing, "", "",
+			stateCRDList, modeBrowsing, "",
 		},
 		{
-			name:       "escape from group resource list",
-			state:      stateGroupResourceList,
-			wantState:  stateCRDList,
-			wantFilter: "",
-		},
-		{
-			name:       "escape with filter",
-			state:      stateCRDList,
-			filter:     "test",
-			wantFilter: "",
+			"escape with filter", stateCRDList, modeBrowsing, "", "test", stateCRDList, modeBrowsing, "",
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{
-				state:         tt.state,
-				mode:          tt.mode,
-				selectedGroup: tt.selectedGroup,
-				filter:        tt.filter,
-				crds: []crdInfo{
-					{name: "test1", group: "g1"},
-				},
-				filteredCRDs: []crdInfo{
-					{name: "test1", group: "g1"},
-				},
-				resources: []resourceInfo{
-					{name: "res1", namespace: "default"},
-				},
-				filteredResources: []resourceInfo{
-					{name: "res1", namespace: "default"},
-				},
+				state: tt.state, mode: tt.mode, selectedGroup: tt.selectedGroup, filter: tt.filter,
+				crds:              []crdInfo{{name: "test1", group: "g1"}},
+				filteredCRDs:      []crdInfo{{name: "test1", group: "g1"}},
+				resources:         []resourceInfo{{name: "res1", namespace: "default"}},
+				filteredResources: []resourceInfo{{name: "res1", namespace: "default"}},
 			}
 
 			m.handleEscape()
@@ -969,7 +954,7 @@ func TestMoveUp(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{
 				state:          tt.state,
 				crdCursor:      tt.crdCursor,
@@ -1008,43 +993,20 @@ func TestMoveDownRes(t *testing.T) {
 		moveAmount    int
 		wantResCursor int
 	}{
-		{
-			name:          "move down in resource list",
-			resCursor:     0,
-			resCount:      3,
-			moveAmount:    1,
-			wantResCursor: 1,
-		},
-		{
-			name:          "move down past end",
-			resCursor:     2,
-			resCount:      3,
-			moveAmount:    5,
-			wantResCursor: 2,
-		},
-		{
-			name:          "move down to end",
-			resCursor:     0,
-			resCount:      3,
-			moveAmount:    2,
-			wantResCursor: 2,
-		},
+		{"move down in resource list", 0, 3, 1, 1},
+		{"move down past end", 2, 3, 5, 2},
+		{"move down to end", 0, 3, 2, 2},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			resources := make([]resourceInfo, tt.resCount)
-			for i := 0; i < tt.resCount; i++ {
-				resources[i] = resourceInfo{name: "res", namespace: "default"}
-			}
-
 			m := &model{
 				state:             stateResourceList,
 				resourceCursor:    tt.resCursor,
 				resources:         resources,
 				filteredResources: resources,
 			}
-
 			m.moveDownRes(tt.moveAmount)
 
 			if m.resourceCursor != tt.wantResCursor {
@@ -1116,43 +1078,20 @@ func TestMoveDownCRDEdgeCases(t *testing.T) {
 		moveAmount    int
 		wantCRDCursor int
 	}{
-		{
-			name:          "move down in CRD list",
-			crdCursor:     0,
-			crdCount:      3,
-			moveAmount:    1,
-			wantCRDCursor: 1,
-		},
-		{
-			name:          "move down to boundary",
-			crdCursor:     1,
-			crdCount:      3,
-			moveAmount:    1,
-			wantCRDCursor: 2,
-		},
-		{
-			name:          "move down past end",
-			crdCursor:     2,
-			crdCount:      3,
-			moveAmount:    5,
-			wantCRDCursor: 2,
-		},
+		{"move down in CRD list", 0, 3, 1, 1},
+		{"move down to boundary", 1, 3, 1, 2},
+		{"move down past end", 2, 3, 5, 2},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			crds := make([]crdInfo, tt.crdCount)
-			for i := 0; i < tt.crdCount; i++ {
-				crds[i] = crdInfo{name: "crd", group: "g"}
-			}
-
 			m := &model{
 				state:        stateCRDList,
 				crdCursor:    tt.crdCursor,
 				crds:         crds,
 				filteredCRDs: crds,
 			}
-
 			m.moveDownCRD(tt.moveAmount)
 
 			if m.crdCursor != tt.wantCRDCursor {
@@ -1187,7 +1126,7 @@ func TestRenderWithData(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			var sb strings.Builder
 
 			crds := make([]crdInfo, tt.crdCount)
@@ -1232,14 +1171,15 @@ func TestHighlightYAMLWithContent(t *testing.T) {
 			wantLen: 1,
 		},
 		{
-			name:    "complex YAML",
-			yaml:    "apiVersion: v1\nkind: Pod\nmetadata:\n  name: test\nspec:\n  containers:\n  - name: app\n    image: nginx",
+			name: "complex YAML",
+			yaml: "apiVersion: v1\nkind: Pod\nmetadata:\n  name: test\n" +
+				"spec:\n  containers:\n  - name: app\n    image: nginx",
 			wantLen: 1,
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{}
 
 			result := m.highlightYAML(tt.yaml)
@@ -1286,7 +1226,7 @@ func TestHandleFilteringKeys(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{
 				state:        tt.state,
 				filter:       tt.filter,
@@ -1296,7 +1236,7 @@ func TestHandleFilteringKeys(t *testing.T) {
 			}
 
 			newModel, _ := m.handleFilteringKeys(tt.keyMsg)
-			newM := newModel.(model)
+			newM := assertModel(t, newModel)
 
 			if newM.mode != tt.wantMode {
 				t.Errorf("mode = %v, want %v", newM.mode, tt.wantMode)
@@ -1329,7 +1269,7 @@ func TestGetPositionIndicator(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			crds := make([]crdInfo, tt.crdCount)
 			for i := 0; i < tt.crdCount; i++ {
 				crds[i] = crdInfo{name: "c", group: "g"}
@@ -1368,71 +1308,41 @@ func TestMoveUpExtended(t *testing.T) {
 		wantCursor    int
 		wantOffset    int
 	}{
-		{
-			name:          "scroll up CRD list with offset",
-			state:         stateCRDList,
-			initialCursor: 5,
-			initialOffset: 3,
-			moveAmount:    2,
-			wantCursor:    3,
-			wantOffset:    3,
-		},
-		{
-			name:          "scroll up resource with large amount",
-			state:         stateResourceList,
-			initialCursor: 10,
-			initialOffset: 5,
-			moveAmount:    15,
-			wantCursor:    0,
-			wantOffset:    0,
-		},
-		{
-			name:          "scroll up at top",
-			state:         stateCRDList,
-			initialCursor: 0,
-			initialOffset: 0,
-			moveAmount:    10,
-			wantCursor:    0,
-			wantOffset:    0,
-		},
+		{"scroll up CRD list with offset", stateCRDList, 5, 3, 2, 3, 3},
+		{"scroll up resource with large amount", stateResourceList, 10, 5, 15, 0, 0},
+		{"scroll up at top", stateCRDList, 0, 0, 10, 0, 0},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			crds := make([]crdInfo, 20)
-			for i := 0; i < 20; i++ {
-				crds[i] = crdInfo{name: "c", group: "g"}
-			}
-
-			resources := make([]resourceInfo, 15)
-			for i := 0; i < 15; i++ {
-				resources[i] = resourceInfo{name: "r", namespace: "d"}
-			}
-
-			m := &model{
-				state:             tt.state,
-				crdCursor:         tt.initialCursor,
-				crdScrollOffset:   tt.initialOffset,
-				crds:              crds,
-				filteredCRDs:      crds,
-				resourceCursor:    tt.initialCursor,
-				resScrollOffset:   tt.initialOffset,
-				resources:         resources,
-				filteredResources: resources,
-			}
-
+		t.Run(tt.name, func(_ *testing.T) {
+			m := setupMoveUpModel(tt.state, tt.initialCursor, tt.initialOffset)
 			m.moveUp(tt.moveAmount)
-
-			if tt.state == stateCRDList {
-				if m.crdCursor != tt.wantCursor {
-					t.Errorf("crdCursor = %d, want %d", m.crdCursor, tt.wantCursor)
-				}
-			} else if tt.state == stateResourceList {
-				if m.resourceCursor != tt.wantCursor {
-					t.Errorf("resourceCursor = %d, want %d", m.resourceCursor, tt.wantCursor)
-				}
-			}
+			verifyMoveUp(t, m, tt.state, tt.wantCursor)
 		})
+	}
+}
+
+func setupMoveUpModel(state viewState, cursor, offset int) *model {
+	crds := make([]crdInfo, 20)
+	resources := make([]resourceInfo, 15)
+
+	return &model{
+		state: state, crdCursor: cursor, crdScrollOffset: offset, crds: crds, filteredCRDs: crds,
+		resourceCursor: cursor, resScrollOffset: offset, resources: resources, filteredResources: resources,
+	}
+}
+
+func verifyMoveUp(t *testing.T, m *model, state viewState, want int) {
+	t.Helper()
+
+	if state == stateCRDList {
+		if m.crdCursor != want {
+			t.Errorf("crdCursor = %d, want %d", m.crdCursor, want)
+		}
+	} else if state == stateResourceList {
+		if m.resourceCursor != want {
+			t.Errorf("resourceCursor = %d, want %d", m.resourceCursor, want)
+		}
 	}
 }
 
@@ -1470,7 +1380,7 @@ func TestHighlightYAMLComprehensive(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{}
 			result := m.highlightYAML(tt.yaml)
 
@@ -1561,7 +1471,7 @@ func TestFetchYAMLAsync(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{
 				k8s:         k,
 				selectedCRD: tt.crd,
@@ -1591,80 +1501,31 @@ func TestHandleBrowsingKeysExtended(t *testing.T) {
 		state      viewState
 		wantChange bool
 	}{
-		{
-			name:       "up arrow in CRD list",
-			keyMsg:     tea.KeyPressMsg{Code: tea.KeyUp},
-			state:      stateCRDList,
-			wantChange: true,
-		},
-		{
-			name:       "down arrow in resource list",
-			keyMsg:     tea.KeyPressMsg{Code: tea.KeyDown},
-			state:      stateResourceList,
-			wantChange: true,
-		},
-		{
-			name:       "pgup key",
-			keyMsg:     tea.KeyPressMsg{Code: tea.KeyPgUp},
-			state:      stateCRDList,
-			wantChange: true,
-		},
-		{
-			name:       "pgdown key",
-			keyMsg:     tea.KeyPressMsg{Code: tea.KeyPgDown},
-			state:      stateCRDList,
-			wantChange: true,
-		},
-		{
-			name:       "home key",
-			keyMsg:     tea.KeyPressMsg{Code: tea.KeyHome},
-			state:      stateCRDList,
-			wantChange: true,
-		},
-		{
-			name:       "end key",
-			keyMsg:     tea.KeyPressMsg{Code: tea.KeyEnd},
-			state:      stateCRDList,
-			wantChange: true,
-		},
-		{
-			name:       "slash for filter",
-			keyMsg:     tea.KeyPressMsg{Text: "/", Code: '/'},
-			state:      stateCRDList,
-			wantChange: true,
-		},
+		{"up arrow in CRD list", tea.KeyPressMsg{Code: tea.KeyUp}, stateCRDList, true},
+		{"down arrow in resource list", tea.KeyPressMsg{Code: tea.KeyDown}, stateResourceList, true},
+		{"pgup key", tea.KeyPressMsg{Code: tea.KeyPgUp}, stateCRDList, true},
+		{"pgdown key", tea.KeyPressMsg{Code: tea.KeyPgDown}, stateCRDList, true},
+		{"home key", tea.KeyPressMsg{Code: tea.KeyHome}, stateCRDList, true},
+		{"end key", tea.KeyPressMsg{Code: tea.KeyEnd}, stateCRDList, true},
+		{"slash for filter", tea.KeyPressMsg{Text: "/", Code: '/'}, stateCRDList, true},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := &model{
-				state: tt.state,
-				crds: []crdInfo{
-					{name: "c1", group: "g"},
-					{name: "c2", group: "g"},
-					{name: "c3", group: "g"},
-				},
-				filteredCRDs: []crdInfo{
-					{name: "c1", group: "g"},
-					{name: "c2", group: "g"},
-					{name: "c3", group: "g"},
-				},
-				resources: []resourceInfo{
-					{name: "r1", namespace: "d"},
-					{name: "r2", namespace: "d"},
-				},
-				filteredResources: []resourceInfo{
-					{name: "r1", namespace: "d"},
-					{name: "r2", namespace: "d"},
-				},
-			}
-
-			initialCursor := m.crdCursor
+		t.Run(tt.name, func(_ *testing.T) {
+			m := setupBrowsingModel(tt.state)
 			m.handleBrowsingKeys(tt.keyMsg)
-
-			// Just ensure no panic
-			_ = initialCursor
 		})
+	}
+}
+
+func setupBrowsingModel(state viewState) *model {
+	crds := []crdInfo{{name: "c1"}, {name: "c2"}, {name: "c3"}}
+	resources := []resourceInfo{{name: "r1"}, {name: "r2"}}
+
+	return &model{
+		state: state,
+		crds:  crds, filteredCRDs: crds,
+		resources: resources, filteredResources: resources,
 	}
 }
 
@@ -1710,7 +1571,7 @@ func TestFetchResourcesMultiNamespace(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{
 				k8s:              k,
 				allNamespaces:    tt.allNamespaces,
@@ -1775,7 +1636,7 @@ func TestRenderingWithScrolling(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			var sb strings.Builder
 
 			crds := make([]crdInfo, tt.itemCount)
@@ -1845,7 +1706,7 @@ func TestUpdateAllMessageTypes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := initialModel(k, "default")
 			newModel, cmd := m.Update(tt.msg)
 
@@ -1863,24 +1724,7 @@ func TestUpdateAllMessageTypes(t *testing.T) {
 }
 
 func TestFetchGroupResourcesVariations(t *testing.T) {
-	scheme := runtime.NewScheme()
-	gvr := schema.GroupVersionResource{
-		Group:    "example.com",
-		Version:  "v1",
-		Resource: "examples",
-	}
-
-	dynamicClient := fake.NewSimpleDynamicClientWithCustomListKinds(
-		scheme,
-		map[schema.GroupVersionResource]string{
-			gvr: "ExampleList",
-		},
-	)
-
-	k := &k8sClient{
-		dynamic: dynamicClient,
-	}
-
+	k := setupFakeK8sClient()
 	tests := []struct {
 		name             string
 		selectedGroup    string
@@ -1888,49 +1732,16 @@ func TestFetchGroupResourcesVariations(t *testing.T) {
 		currentNamespace string
 		resourceCount    int
 	}{
-		{
-			name:             "group with single namespace",
-			selectedGroup:    "group1",
-			allNamespaces:    false,
-			currentNamespace: "default",
-			resourceCount:    3,
-		},
-		{
-			name:             "group with all namespaces",
-			selectedGroup:    "group2",
-			allNamespaces:    true,
-			currentNamespace: "default",
-			resourceCount:    5,
-		},
-		{
-			name:             "empty group",
-			selectedGroup:    "nonexistent",
-			allNamespaces:    false,
-			currentNamespace: "default",
-			resourceCount:    0,
-		},
+		{"group with single namespace", "group1", false, "default", 3},
+		{"group with all namespaces", "group2", true, "default", 5},
+		{"empty group", "nonexistent", false, "default", 0},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resources := make([]resourceInfo, tt.resourceCount)
-			for i := 0; i < tt.resourceCount; i++ {
-				resources[i] = resourceInfo{
-					name:      "res" + string(rune(i)),
-					namespace: "default",
-					crd: crdInfo{
-						group: tt.selectedGroup,
-						name:  "test",
-					},
-				}
-			}
-
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{
-				k8s:              k,
-				selectedGroup:    tt.selectedGroup,
-				allNamespaces:    tt.allNamespaces,
-				currentNamespace: tt.currentNamespace,
-				resources:        resources,
+				k8s: k, selectedGroup: tt.selectedGroup, allNamespaces: tt.allNamespaces,
+				currentNamespace: tt.currentNamespace, resources: make([]resourceInfo, tt.resourceCount),
 			}
 
 			cmd := m.fetchGroupResources()
@@ -1941,12 +1752,20 @@ func TestFetchGroupResourcesVariations(t *testing.T) {
 			msg := cmd()
 			switch msg.(type) {
 			case resourcesLoadedMsg, errMsg:
-			// Expected
 			default:
 				t.Errorf("unexpected message type: %T", msg)
 			}
 		})
 	}
+}
+
+func setupFakeK8sClient() *k8sClient {
+	scheme := runtime.NewScheme()
+	gvr := schema.GroupVersionResource{Group: "example.com", Version: "v1", Resource: "examples"}
+	kinds := map[schema.GroupVersionResource]string{gvr: "ExampleList"}
+	dynamicClient := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, kinds)
+
+	return &k8sClient{dynamic: dynamicClient}
 }
 
 func TestHighlightYAMLAllBranches(t *testing.T) {
@@ -1998,12 +1817,12 @@ func TestHighlightYAMLAllBranches(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{}
 			result := m.highlightYAML(tt.yaml)
 
 			if result == "" && tt.yaml != "" {
-				t.Errorf("highlightYAML returned empty for non-empty YAML")
+				t.Error("highlightYAML returned empty for non-empty YAML")
 			}
 
 			if tt.expected != "" && len(result) > 0 {
@@ -2063,7 +1882,7 @@ func TestHandleBrowsingKeysAllStates(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{
 				state:             tt.state,
 				selectedYAML:      "test: data\nmore: content\nlines: here",
@@ -2109,7 +1928,7 @@ func TestMoveUpAllStates(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			crds := make([]crdInfo, 10)
 			for i := 0; i < 10; i++ {
 				crds[i] = crdInfo{name: "c", group: "g"}
@@ -2173,7 +1992,7 @@ func TestRenderResourceListVariations(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			var sb strings.Builder
 
 			resources := make([]resourceInfo, tt.resCount)
@@ -2229,7 +2048,7 @@ func TestRenderGroupResourceListVariations(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			var sb strings.Builder
 
 			resources := make([]resourceInfo, tt.resCount)
@@ -2258,131 +2077,53 @@ func TestRenderGroupResourceListVariations(t *testing.T) {
 	}
 }
 
-func TestMoveDownCRDAllBoundaries(t *testing.T) {
-	tests := []struct {
-		name       string
-		cursor     int
-		crdCount   int
-		moveAmount int
-		wantCursor int
-	}{
-		{
-			name:       "move 1 down",
-			cursor:     0,
-			crdCount:   5,
-			moveAmount: 1,
-			wantCursor: 1,
-		},
-		{
-			name:       "move to end",
-			cursor:     3,
-			crdCount:   5,
-			moveAmount: 2,
-			wantCursor: 4,
-		},
-		{
-			name:       "move past end",
-			cursor:     4,
-			crdCount:   5,
-			moveAmount: 10,
-			wantCursor: 4,
-		},
-		{
-			name:       "large move",
-			cursor:     0,
-			crdCount:   100,
-			moveAmount: 50,
-			wantCursor: 50,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			crds := make([]crdInfo, tt.crdCount)
-			for i := 0; i < tt.crdCount; i++ {
-				crds[i] = crdInfo{name: "c", group: "g"}
-			}
-
-			m := &model{
-				state:        stateCRDList,
-				crdCursor:    tt.cursor,
-				crds:         crds,
-				filteredCRDs: crds,
-			}
-
-			m.moveDownCRD(tt.moveAmount)
-
-			if m.crdCursor != tt.wantCursor {
-				t.Errorf("crdCursor = %d, want %d", m.crdCursor, tt.wantCursor)
-			}
-		})
-	}
+func TestMoveDownAllBoundariesCRD(t *testing.T) {
+	runCRDMoveDownTest(t, "move 1 down", 0, 5, 1, 1)
+	runCRDMoveDownTest(t, "move to end", 3, 5, 2, 4)
+	runCRDMoveDownTest(t, "move past end", 4, 5, 10, 4)
+	runCRDMoveDownTest(t, "large move", 0, 100, 50, 50)
 }
 
-func TestMoveDownResAllBoundaries(t *testing.T) {
-	tests := []struct {
-		name       string
-		cursor     int
-		resCount   int
-		moveAmount int
-		wantCursor int
-	}{
-		{
-			name:       "move 1 down",
-			cursor:     0,
-			resCount:   5,
-			moveAmount: 1,
-			wantCursor: 1,
-		},
-		{
-			name:       "move to end",
-			cursor:     3,
-			resCount:   5,
-			moveAmount: 2,
-			wantCursor: 4,
-		},
-		{
-			name:       "move past end",
-			cursor:     4,
-			resCount:   5,
-			moveAmount: 10,
-			wantCursor: 4,
-		},
-		{
-			name:       "large list",
-			cursor:     0,
-			resCount:   100,
-			moveAmount: 75,
-			wantCursor: 75,
-		},
-	}
+func runCRDMoveDownTest(t *testing.T, name string, cursor, count, move, want int) {
+	t.Run(name, func(_ *testing.T) {
+		crds := make([]crdInfo, count)
+		m := &model{state: stateCRDList, crdCursor: cursor, crds: crds, filteredCRDs: crds}
+		m.moveDownCRD(move)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resources := make([]resourceInfo, tt.resCount)
-			for i := 0; i < tt.resCount; i++ {
-				resources[i] = resourceInfo{name: "r", namespace: "d"}
-			}
+		if m.crdCursor != want {
+			t.Errorf("crdCursor = %d, want %d", m.crdCursor, want)
+		}
+	})
+}
 
-			m := &model{
-				state:             stateResourceList,
-				resourceCursor:    tt.cursor,
-				resources:         resources,
-				filteredResources: resources,
-			}
+func TestMoveDownAllBoundariesRes(t *testing.T) {
+	runResMoveDownTest(t, "move 1 down", 0, 5, 1, 1)
+	runResMoveDownTest(t, "move to end", 3, 5, 2, 4)
+	runResMoveDownTest(t, "move past end", 4, 5, 10, 4)
+	runResMoveDownTest(t, "large list", 0, 100, 75, 75)
+}
 
-			m.moveDownRes(tt.moveAmount)
+func runResMoveDownTest(t *testing.T, name string, cursor, count, move, want int) {
+	t.Run(name, func(_ *testing.T) {
+		resources := make([]resourceInfo, count)
+		m := &model{
+			state:             stateResourceList,
+			resourceCursor:    cursor,
+			resources:         resources,
+			filteredResources: resources,
+		}
+		m.moveDownRes(move)
 
-			if m.resourceCursor != tt.wantCursor {
-				t.Errorf("resourceCursor = %d, want %d", m.resourceCursor, tt.wantCursor)
-			}
-		})
-	}
+		if m.resourceCursor != want {
+			t.Errorf("resourceCursor = %d, want %d", m.resourceCursor, want)
+		}
+	})
 }
 
 //	func TestInitModel(t *testing.T) {
 //		m := model{
-//			k8s: &k8sClient{dynamic: fake.NewSimpleDynamicClient(runtime.NewScheme())}, // Prevent panic if fetching immediately
+//			k8s: &k8sClient{
+//				dynamic: fake.NewSimpleDynamicClient(runtime.NewScheme())}, // Prevent panic if fetching immediately
 //		}
 //		cmd := m.Init()
 //		if cmd == nil {
@@ -2434,7 +2175,7 @@ func TestSortResources(t *testing.T) {
 //		}
 //
 //		newModel, cmd := m.handleGroupTransition()
-//		mUpdated := newModel.(model)
+//		mUpdated := assertModel(t, newModel)
 //
 //		if mUpdated.state != stateGroupResourceList {
 //			t.Errorf("expected state to be stateGroupResourceList")
@@ -2459,7 +2200,7 @@ func TestListNavigation(t *testing.T) {
 	msg := tea.KeyPressMsg{Code: 'j'}
 	newModel, _ := m.handleBrowsingKeys(msg)
 
-	mUpdated := newModel.(model)
+	mUpdated := assertModel(t, newModel)
 	if mUpdated.resourceCursor != 1 {
 		t.Errorf("expected resourceCursor 1, got %d", mUpdated.resourceCursor)
 	}
@@ -2468,7 +2209,7 @@ func TestListNavigation(t *testing.T) {
 	msg = tea.KeyPressMsg{Text: "ctrl+d", Code: 4} // roughly ctrl+d handling by string in browsingKeys
 	newModel, _ = mUpdated.handleBrowsingKeys(msg)
 
-	mUpdated = newModel.(model)
+	mUpdated = assertModel(t, newModel)
 	if mUpdated.resourceCursor != 16 {
 		t.Errorf("expected resourceCursor 16, got %d", mUpdated.resourceCursor)
 	}
@@ -2477,7 +2218,7 @@ func TestListNavigation(t *testing.T) {
 	msg = tea.KeyPressMsg{Text: "ctrl+u", Code: 21}
 	newModel, _ = mUpdated.handleBrowsingKeys(msg)
 
-	mUpdated = newModel.(model)
+	mUpdated = assertModel(t, newModel)
 	if mUpdated.resourceCursor != 1 {
 		t.Errorf("expected resourceCursor 1, got %d", mUpdated.resourceCursor)
 	}
@@ -2514,29 +2255,33 @@ func TestHandleEnterActions(t *testing.T) {
 	}
 
 	newModel, cmd := m.handleEnter()
-	mUpdated := newModel.(model)
+	mUpdated := assertModel(t, newModel)
 
 	if mUpdated.state != stateResourceList {
-		t.Errorf("expected stateResourceList")
+		t.Error("expected stateResourceList")
 	}
 
 	if cmd == nil {
-		t.Errorf("expected command on transition")
+		t.Error("expected command on transition")
 	}
 
 	// Test entry from Resource List -> YAML View
 	mUpdated.state = stateResourceList
-	mUpdated.filteredResources = []resourceInfo{{name: "my-test-res", namespace: "default", crd: mUpdated.filteredCRDs[0]}}
+	mUpdated.filteredResources = []resourceInfo{{
+		name:      "my-test-res",
+		namespace: "default",
+		crd:       mUpdated.filteredCRDs[0],
+	}}
 
 	newModel, cmd = mUpdated.handleEnter()
-	mUpdated = newModel.(model)
+	mUpdated = assertModel(t, newModel)
 
 	if mUpdated.state != stateYAMLView {
-		t.Errorf("expected stateYAMLView")
+		t.Error("expected stateYAMLView")
 	}
 
 	if cmd == nil {
-		t.Errorf("expected command on yaml fetch transition")
+		t.Error("expected command on yaml fetch transition")
 	}
 }
 

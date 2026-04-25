@@ -13,80 +13,60 @@ import (
 func TestExtractCRDInfo(t *testing.T) {
 	k := &k8sClient{}
 
-	validObj := map[string]any{
-		"metadata": map[string]any{
-			"name": "crds.example.com",
-		},
-		"spec": map[string]any{
-			"group": "example.com",
-			"names": map[string]any{
-				"plural": "crds",
+	t.Run("valid CRD", func(t *testing.T) {
+		validObj := map[string]any{
+			"metadata": map[string]any{
+				"name": "crds.example.com",
 			},
-			"versions": []any{
-				map[string]any{
-					"name":    "v1",
-					"served":  true,
-					"storage": true,
+			"spec": map[string]any{
+				"group": "example.com",
+				"names": map[string]any{
+					"plural": "crds",
+				},
+				"versions": []any{
+					map[string]any{
+						"name":    "v1",
+						"served":  true,
+						"storage": true,
+					},
 				},
 			},
-		},
-	}
+		}
 
-	info, ok := k.extractCRDInfo(validObj)
-	if !ok {
-		t.Fatal("expected extraction to succeed")
-	}
+		info, ok := k.extractCRDInfo(validObj)
+		if !ok {
+			t.Fatal("expected extraction to succeed")
+		}
 
-	if info.name != "crds.example.com" || info.group != "example.com" ||
-		info.resource != "crds" || info.version != "v1" {
-		t.Errorf("extracted fields do not match expected: %+v", info)
-	}
+		if info.name != "crds.example.com" || info.group != "example.com" ||
+			info.resource != "crds" || info.version != "v1" {
+			t.Errorf("extracted fields do not match expected: %+v", info)
+		}
+	})
 
-	// Test invalid missing metadata
-	invalidObj := map[string]any{}
+	t.Run("invalid cases", func(t *testing.T) {
+		cases := []struct {
+			name string
+			obj  map[string]any
+		}{
+			{"missing metadata", map[string]any{}},
+			{"missing name", map[string]any{"metadata": map[string]any{}}},
+			{"missing spec", map[string]any{"metadata": map[string]any{"name": "something"}}},
+			{"missing versions", map[string]any{
+				"metadata": map[string]any{"name": "something"},
+				"spec":     map[string]any{"group": "test", "names": map[string]any{"plural": "tests"}},
+			}},
+		}
 
-	_, ok = k.extractCRDInfo(invalidObj)
-	if ok {
-		t.Errorf("expected failure on missing metadata")
-	}
-
-	// Test missing name but valid metadata
-	invalidObj2 := map[string]any{
-		"metadata": map[string]any{},
-	}
-
-	_, ok = k.extractCRDInfo(invalidObj2)
-	if ok {
-		t.Errorf("expected failure on missing name")
-	}
-
-	// Test missing spec
-	invalidObj3 := map[string]any{
-		"metadata": map[string]any{
-			"name": "something",
-		},
-	}
-
-	_, ok = k.extractCRDInfo(invalidObj3)
-	if ok {
-		t.Errorf("expected failure on missing spec")
-	}
-
-	// Test missing versions
-	invalidObj4 := map[string]any{
-		"metadata": map[string]any{
-			"name": "something",
-		},
-		"spec": map[string]any{
-			"group": "test",
-			"names": map[string]any{"plural": "tests"},
-		},
-	}
-
-	_, ok = k.extractCRDInfo(invalidObj4)
-	if ok {
-		t.Errorf("expected failure on missing versions")
-	}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				_, ok := k.extractCRDInfo(tc.obj)
+				if ok {
+					t.Errorf("expected failure for %s", tc.name)
+				}
+			})
+		}
+	})
 }
 
 func TestFindPreferredVersion(t *testing.T) {
@@ -127,7 +107,7 @@ func TestIsServedAndStored(t *testing.T) {
 
 	name, ok := k.isServedAndStored(v1)
 	if !ok || name != "v1" {
-		t.Errorf("expected v1 to be served and stored")
+		t.Error("expected v1 to be served and stored")
 	}
 
 	// Not storage
@@ -135,7 +115,7 @@ func TestIsServedAndStored(t *testing.T) {
 
 	_, ok = k.isServedAndStored(v2)
 	if ok {
-		t.Errorf("expected v2 to fail storage check")
+		t.Error("expected v2 to fail storage check")
 	}
 
 	// Not served
@@ -143,7 +123,7 @@ func TestIsServedAndStored(t *testing.T) {
 
 	_, ok = k.isServedAndStored(v3)
 	if ok {
-		t.Errorf("expected v3 to fail served check")
+		t.Error("expected v3 to fail served check")
 	}
 
 	// Invalid types
@@ -151,7 +131,7 @@ func TestIsServedAndStored(t *testing.T) {
 
 	_, ok = k.isServedAndStored(v4)
 	if ok {
-		t.Errorf("expected v4 to fail type assertions")
+		t.Error("expected v4 to fail type assertions")
 	}
 }
 

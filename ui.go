@@ -546,11 +546,11 @@ func (m model) renderStatusBar(posIndicator string) string {
 
 		switch m.state {
 		case stateResourceList, stateGroupResourceList:
-			legend = "↑/↓, ^j/^k, ^d/^u: navigate • enter: view • n: namespace • esc: back • q: quit"
+			legend = "↑/↓, j/k, ^d/^u: navigate • enter: view • n: namespace • esc: back • q: quit"
 		case stateYAMLView:
-			legend = "↑/↓, ^j/^k, ^d/^u: scroll • esc: back • q: quit"
+			legend = "↑/↓, j/k, ^d/^u: scroll • esc: back • q: quit"
 		default:
-			legend = "/: filter • ↑/↓, ^j/^k, ^d/^u: navigate • enter: select • g: group • esc: back • q: quit"
+			legend = "/: filter • ↑/↓, j/k, ^d/^u: navigate • enter: select • g: group • esc: back • q: quit"
 		}
 	}
 

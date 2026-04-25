@@ -42,6 +42,11 @@ archives:
       - README.md
       - LICENSE
 
+sboms:
+  - artifacts: archive
+  - id: source
+    artifacts: source
+
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
   algorithm: sha256
