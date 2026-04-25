@@ -28,15 +28,7 @@ jobs:
         with:
           github_access_token: ${{ secrets.GH_GORELEASER_TOKEN }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GH_GORELEASER_TOKEN }}
+      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
 
       - name: Set up Go
         uses: actions/setup-go@v6
