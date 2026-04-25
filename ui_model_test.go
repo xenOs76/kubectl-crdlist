@@ -52,7 +52,7 @@ func TestMoveUpBoundaries(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			crds := make([]crdInfo, tt.total)
 			for i := 0; i < tt.total; i++ {
 				crds[i] = crdInfo{name: "c", group: "g"}
@@ -154,7 +154,7 @@ func TestBrowsingKeysNavigationAll(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{
 				state: tt.state,
 				crds: []crdInfo{
@@ -197,7 +197,7 @@ func TestRenderingEdgeCases(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			var sb strings.Builder
 
 			crds := make([]crdInfo, tt.itemCount)
@@ -225,61 +225,58 @@ func TestRenderingEdgeCases(t *testing.T) {
 				m.renderCRDList(&sb)
 			case stateResourceList:
 				m.renderResourceList(&sb)
+			default:
+				// No rendering for other states in this test
 			}
 		})
 	}
 }
 
-func TestMoveDownCRDRes(t *testing.T) {
+func TestMoveDownCRDDirect(t *testing.T) {
 	tests := []struct {
 		name   string
-		type_  string
 		count  int
 		cursor int
 		move   int
 		want   int
 	}{
-		{"crd 1", "crd", 5, 0, 1, 1},
-		{"crd end", "crd", 5, 3, 2, 4},
-		{"crd over", "crd", 5, 4, 10, 4},
-		{"res 1", "res", 5, 0, 1, 1},
-		{"res end", "res", 5, 3, 2, 4},
-		{"res over", "res", 5, 4, 10, 4},
+		{"crd 1", 5, 0, 1, 1},
+		{"crd end", 5, 3, 2, 4},
+		{"crd over", 5, 4, 10, 4},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			crds := make([]crdInfo, tt.count)
-			for i := 0; i < tt.count; i++ {
-				crds[i] = crdInfo{name: "c", group: "g"}
-			}
+			m := &model{crdCursor: tt.cursor, crds: crds, filteredCRDs: crds}
+			m.moveDownCRD(tt.move)
 
+			if m.crdCursor != tt.want {
+				t.Errorf("cursor=%d want=%d", m.crdCursor, tt.want)
+			}
+		})
+	}
+}
+
+func TestMoveDownResDirect(t *testing.T) {
+	tests := []struct {
+		name   string
+		count  int
+		cursor int
+		move   int
+		want   int
+	}{
+		{"res 1", 5, 0, 1, 1},
+		{"res end", 5, 3, 2, 4},
+		{"res over", 5, 4, 10, 4},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			resources := make([]resourceInfo, tt.count)
-			for i := 0; i < tt.count; i++ {
-				resources[i] = resourceInfo{name: "r", namespace: "d"}
-			}
+			m := &model{resourceCursor: tt.cursor, resources: resources, filteredResources: resources}
+			m.moveDownRes(tt.move)
 
-			m := &model{
-				crdCursor:         tt.cursor,
-				crds:              crds,
-				filteredCRDs:      crds,
-				resourceCursor:    tt.cursor,
-				resources:         resources,
-				filteredResources: resources,
-			}
-
-			if tt.type_ == "crd" {
-				m.moveDownCRD(tt.move)
-
-				if m.crdCursor != tt.want {
-					t.Errorf("cursor=%d want=%d", m.crdCursor, tt.want)
-				}
-			} else {
-				m.moveDownRes(tt.move)
-
-				if m.resourceCursor != tt.want {
-					t.Errorf("cursor=%d want=%d", m.resourceCursor, tt.want)
-				}
+			if m.resourceCursor != tt.want {
+				t.Errorf("cursor=%d want=%d", m.resourceCursor, tt.want)
 			}
 		})
 	}
@@ -306,7 +303,7 @@ func TestHandleBrowsingKeysComprehensive(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			m := &model{
 				state: tt.state,
 				crds: []crdInfo{
@@ -525,6 +522,8 @@ func TestRenderFunctionsWithVariousInputs(t *testing.T) {
 				m.renderResourceList(&sb)
 			case stateGroupResourceList:
 				m.renderGroupResourceList(&sb)
+			default:
+				// No rendering for other states
 			}
 
 			if sb.Len() == 0 && tt.crds+tt.res > 0 {
