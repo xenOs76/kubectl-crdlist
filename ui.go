@@ -1,8 +1,9 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -120,16 +121,16 @@ func (m model) collectGroupResources(ns string) ([]resourceInfo, error) {
 }
 
 func (model) sortResources(res []resourceInfo) {
-	sort.Slice(res, func(i, j int) bool {
-		if res[i].namespace != res[j].namespace {
-			return res[i].namespace < res[j].namespace
+	slices.SortFunc(res, func(a, b resourceInfo) int {
+		if a.namespace != b.namespace {
+			return cmp.Compare(a.namespace, b.namespace)
 		}
 
-		if res[i].crd.name != res[j].crd.name {
-			return res[i].crd.name < res[j].crd.name
+		if a.crd.name != b.crd.name {
+			return cmp.Compare(a.crd.name, b.crd.name)
 		}
 
-		return res[i].name < res[j].name
+		return cmp.Compare(a.name, b.name)
 	})
 }
 
@@ -154,8 +155,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case crdsLoadedMsg:
 		m.crds = msg
-		sort.Slice(m.crds, func(i, j int) bool {
-			return m.crds[i].group < m.crds[j].group
+		slices.SortFunc(m.crds, func(a, b crdInfo) int {
+			return cmp.Compare(a.group, b.group)
 		})
 		m.filteredCRDs = m.crds
 		m.loading = false
@@ -179,6 +180,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		return m.handleKeyPress(msg)
+	default:
+		// No-op for other messages
 	}
 
 	return m, cmd
@@ -217,6 +220,24 @@ func (m model) handleBrowsingKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "esc":
 		m.handleEscape()
+	case "up", "k", "ctrl+k", "down", "j", "ctrl+j", "ctrl+u", "ctrl+d":
+		m.handleNavigation(k)
+	case "enter":
+		m.mode = modeBrowsing // Ensure browsing mode on transition
+		return m.handleEnter()
+	case "n":
+		return m.handleNamespaceToggle()
+	case "g", "/":
+		return m.handleActionKey(k)
+	default:
+		// No default action for browsing keys
+	}
+
+	return m, nil
+}
+
+func (m *model) handleNavigation(k string) {
+	switch k {
 	case "up", "k", "ctrl+k":
 		m.moveUp(1)
 	case "down", "j", "ctrl+j":
@@ -225,17 +246,21 @@ func (m model) handleBrowsingKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.moveUp(15)
 	case "ctrl+d":
 		m.moveDown(15)
-	case "enter":
-		m.mode = modeBrowsing // Ensure browsing mode on transition
-		return m.handleEnter()
-	case "n":
-		return m.handleNamespaceToggle()
+	default:
+	}
+}
+
+func (m model) handleActionKey(k string) (tea.Model, tea.Cmd) {
+	if m.err != nil {
+		return m, nil
+	}
+
+	switch k {
 	case "g":
 		return m.handleGroupTransition()
 	case "/":
 		m.handleFilterActivation()
 	default:
-		// No default action for browsing keys
 	}
 
 	return m, nil
@@ -261,6 +286,8 @@ func (m *model) handleFilterActivation() {
 }
 
 func (m model) handleNamespaceToggle() (tea.Model, tea.Cmd) {
+	m.err = nil // Clear error on retry
+
 	if m.state == stateResourceList {
 		m.allNamespaces = !m.allNamespaces
 		m.loading = true
@@ -341,29 +368,41 @@ func (m *model) handleEscape() {
 func (m *model) moveUp(amount int) {
 	switch m.state {
 	case stateCRDList:
-		m.crdCursor -= amount
-		if m.crdCursor < 0 {
-			m.crdCursor = 0
-		}
-
-		if m.crdCursor < m.crdScrollOffset {
-			m.crdScrollOffset = m.crdCursor
-		}
+		m.moveUpCRD(amount)
 	case stateResourceList, stateGroupResourceList:
-		m.resourceCursor -= amount
-		if m.resourceCursor < 0 {
-			m.resourceCursor = 0
-		}
-
-		if m.resourceCursor < m.resScrollOffset {
-			m.resScrollOffset = m.resourceCursor
-		}
+		m.moveUpRes(amount)
 	case stateYAMLView:
-		m.yamlScrollLine -= amount
-		if m.yamlScrollLine < 0 {
-			m.yamlScrollLine = 0
-		}
+		m.moveUpYAML(amount)
 	default:
+	}
+}
+
+func (m *model) moveUpCRD(amount int) {
+	m.crdCursor -= amount
+	if m.crdCursor < 0 {
+		m.crdCursor = 0
+	}
+
+	if m.crdCursor < m.crdScrollOffset {
+		m.crdScrollOffset = m.crdCursor
+	}
+}
+
+func (m *model) moveUpRes(amount int) {
+	m.resourceCursor -= amount
+	if m.resourceCursor < 0 {
+		m.resourceCursor = 0
+	}
+
+	if m.resourceCursor < m.resScrollOffset {
+		m.resScrollOffset = m.resourceCursor
+	}
+}
+
+func (m *model) moveUpYAML(amount int) {
+	m.yamlScrollLine -= amount
+	if m.yamlScrollLine < 0 {
+		m.yamlScrollLine = 0
 	}
 }
 
@@ -374,17 +413,21 @@ func (m *model) moveDown(amount int) {
 	case stateResourceList, stateGroupResourceList:
 		m.moveDownRes(amount)
 	case stateYAMLView:
-		lines := strings.Split(m.selectedYAML, "\n")
-
-		m.yamlScrollLine += amount
-		if m.yamlScrollLine > len(lines)-1 {
-			m.yamlScrollLine = len(lines) - 1
-		}
-
-		if m.yamlScrollLine < 0 {
-			m.yamlScrollLine = 0
-		}
+		m.moveDownYAML(amount)
 	default:
+	}
+}
+
+func (m *model) moveDownYAML(amount int) {
+	lines := strings.Split(m.selectedYAML, "\n")
+
+	m.yamlScrollLine += amount
+	if m.yamlScrollLine > len(lines)-1 {
+		m.yamlScrollLine = len(lines) - 1
+	}
+
+	if m.yamlScrollLine < 0 {
+		m.yamlScrollLine = 0
 	}
 }
 
@@ -481,28 +524,32 @@ func (m *model) applyFilter() {
 }
 
 func (m model) View() tea.View {
-	if m.err != nil {
-		return tea.NewView(errorStyle.Render(fmt.Sprintf("Error: %v\n\nPress 'esc' to go back, 'q' to quit.", m.err)))
-	}
-
-	if m.loading {
-		return tea.NewView(dimStyle.Render("Loading data from cluster..."))
-	}
-
 	var s strings.Builder
 
 	m.renderHeader(&s)
 
-	switch m.state {
-	case stateCRDList:
-		m.renderCRDList(&s)
-	case stateResourceList:
-		m.renderResourceList(&s)
-	case stateGroupResourceList:
-		m.renderGroupResourceList(&s)
-	case stateYAMLView:
-		m.renderYAMLView(&s)
-	default:
+	if m.err != nil {
+		nsSnippet := ""
+		if m.state == stateResourceList || m.state == stateGroupResourceList {
+			nsSnippet = ", 'n' to toggle namespace"
+		}
+
+		msg := fmt.Sprintf("Error: %v\n\nPress 'esc' to go back%s, 'q' to quit.", m.err, nsSnippet)
+		s.WriteString(errorStyle.Render(msg))
+	} else if m.loading {
+		s.WriteString(dimStyle.Render("Loading data from cluster..."))
+	} else {
+		switch m.state {
+		case stateCRDList:
+			m.renderCRDList(&s)
+		case stateResourceList:
+			m.renderResourceList(&s)
+		case stateGroupResourceList:
+			m.renderGroupResourceList(&s)
+		case stateYAMLView:
+			m.renderYAMLView(&s)
+		default:
+		}
 	}
 
 	posIndicator := m.getPositionIndicator()

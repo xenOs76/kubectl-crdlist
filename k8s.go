@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/discovery"
@@ -41,10 +42,11 @@ func initK8sClient(flags *genericclioptions.ConfigFlags) (*k8sClient, error) {
 
 // crdInfo holds basic info about a CRD.
 type crdInfo struct {
-	name     string
-	group    string
-	version  string
-	resource string
+	name       string
+	group      string
+	version    string
+	resource   string
+	namespaced bool
 }
 
 // listCRDs fetches all available CRDs in the cluster.
@@ -73,48 +75,28 @@ func (k *k8sClient) listCRDs() ([]crdInfo, error) {
 }
 
 func (k *k8sClient) extractCRDInfo(obj map[string]any) (crdInfo, bool) {
-	metadata, ok := obj["metadata"].(map[string]any)
+	name, ok := getString(obj, "metadata", "name")
 	if !ok {
 		return crdInfo{}, false
 	}
 
-	name, ok := metadata["name"].(string)
+	group, _ := getString(obj, "spec", "group")
+	plural, _ := getString(obj, "spec", "names", "plural")
+
+	versions, ok := getSlice(obj, "spec", "versions")
 	if !ok {
 		return crdInfo{}, false
 	}
 
-	spec, ok := obj["spec"].(map[string]any)
-	if !ok {
-		return crdInfo{}, false
-	}
-
-	group, ok := spec["group"].(string)
-	if !ok {
-		group = ""
-	}
-
-	names, ok := spec["names"].(map[string]any)
-	if !ok {
-		return crdInfo{}, false
-	}
-
-	plural, ok := names["plural"].(string)
-	if !ok {
-		plural = ""
-	}
-
-	versions, ok := spec["versions"].([]any)
-	if !ok {
-		return crdInfo{}, false
-	}
-
-	preferredVersion := k.findPreferredVersion(versions)
+	scope, _ := getString(obj, "spec", "scope")
+	namespaced := scope != "Cluster"
 
 	return crdInfo{
-		name:     name,
-		group:    group,
-		version:  preferredVersion,
-		resource: plural,
+		name:       name,
+		group:      group,
+		version:    k.findPreferredVersion(versions),
+		resource:   plural,
+		namespaced: namespaced,
 	}, true
 }
 
@@ -168,9 +150,21 @@ func (k *k8sClient) listResources(crd crdInfo, namespace string) ([]resourceInfo
 		Resource: crd.resource,
 	}
 
-	list, err := k.dynamic.Resource(gvr).Namespace(namespace).List(context.Background(), metav1.ListOptions{})
+	listClient := k.dynamic.Resource(gvr)
+
+	var list *unstructured.UnstructuredList
+
+	var err error
+
+	if crd.namespaced {
+		list, err = listClient.Namespace(namespace).List(context.Background(), metav1.ListOptions{})
+	} else {
+		list, err = listClient.List(context.Background(), metav1.ListOptions{})
+	}
+
 	if err != nil {
-		return nil, fmt.Errorf("failed to list resources for %s: %w", crd.name, err)
+		return nil, fmt.Errorf("failed to list resources for %s (namespaced: %v) in namespace %s: %w",
+			crd.name, crd.namespaced, namespace, err)
 	}
 
 	var resources []resourceInfo
@@ -209,4 +203,44 @@ func (k *k8sClient) fetchResourceYAML(crd crdInfo, name, namespace string) (stri
 	}
 
 	return string(yamlData), nil
+}
+
+func getString(obj map[string]any, path ...string) (string, bool) {
+	var current any = obj
+
+	for _, p := range path {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return "", false
+		}
+
+		current, ok = m[p]
+		if !ok {
+			return "", false
+		}
+	}
+
+	s, ok := current.(string)
+
+	return s, ok
+}
+
+func getSlice(obj map[string]any, path ...string) ([]any, bool) {
+	var current any = obj
+
+	for _, p := range path {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+
+		current, ok = m[p]
+		if !ok {
+			return nil, false
+		}
+	}
+
+	s, ok := current.([]any)
+
+	return s, ok
 }

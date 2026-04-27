@@ -6,6 +6,7 @@ linters:
     - dupword
     - dupl
     - durationcheck
+    - errcheck
     - errorlint
     - errchkjson
     - misspell
@@ -13,6 +14,9 @@ linters:
     - iface
     - unconvert
     - revive
+    - gocyclo
+    - cyclop
+    - gocognit
     - wsl_v5
     - tagliatelle
     - testifylint
@@ -26,6 +30,10 @@ linters:
 
   settings:
     gocyclo:
+      min-complexity: 15
+    cyclop:
+      max-complexity: 15
+    gocognit:
       min-complexity: 15
 
     revive:
@@ -53,12 +61,16 @@ linters:
           exclude: [""]
           arguments: [15]
 
-        # https://github.com/mgechev/revive/blob/HEAD/RULES_DESCRIPTIONS.md#cyclomatic
         - name: cyclomatic
           severity: warning
           disabled: false
           exclude: [""]
           arguments: [15]
+
+        - name: unhandled-error
+          severity: warning
+          disabled: false
+          exclude: [""]
 
   exclusions:
     generated: lax
@@ -75,6 +87,7 @@ linters:
       - third_party$
       - builtin$
       - examples$
+      - "vendor/*"
 
 formatters:
   enable:

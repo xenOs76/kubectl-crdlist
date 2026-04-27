@@ -14,59 +14,112 @@ func TestExtractCRDInfo(t *testing.T) {
 	k := &k8sClient{}
 
 	t.Run("valid CRD", func(t *testing.T) {
-		validObj := map[string]any{
-			"metadata": map[string]any{
-				"name": "crds.example.com",
-			},
-			"spec": map[string]any{
-				"group": "example.com",
-				"names": map[string]any{
-					"plural": "crds",
-				},
-				"versions": []any{
-					map[string]any{
-						"name":    "v1",
-						"served":  true,
-						"storage": true,
-					},
-				},
-			},
-		}
+		testExtractCRDInfoValid(t, k)
+	})
 
-		info, ok := k.extractCRDInfo(validObj)
-		if !ok {
-			t.Fatal("expected extraction to succeed")
-		}
-
-		if info.name != "crds.example.com" || info.group != "example.com" ||
-			info.resource != "crds" || info.version != "v1" {
-			t.Errorf("extracted fields do not match expected: %+v", info)
-		}
+	t.Run("cluster-scoped CRD", func(t *testing.T) {
+		testExtractCRDInfoClusterScoped(t, k)
 	})
 
 	t.Run("invalid cases", func(t *testing.T) {
-		cases := []struct {
-			name string
-			obj  map[string]any
-		}{
-			{"missing metadata", map[string]any{}},
-			{"missing name", map[string]any{"metadata": map[string]any{}}},
-			{"missing spec", map[string]any{"metadata": map[string]any{"name": "something"}}},
-			{"missing versions", map[string]any{
-				"metadata": map[string]any{"name": "something"},
-				"spec":     map[string]any{"group": "test", "names": map[string]any{"plural": "tests"}},
-			}},
-		}
-
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				_, ok := k.extractCRDInfo(tc.obj)
-				if ok {
-					t.Errorf("expected failure for %s", tc.name)
-				}
-			})
-		}
+		testExtractCRDInfoInvalid(t, k)
 	})
+}
+
+func testExtractCRDInfoValid(t *testing.T, k *k8sClient) {
+	t.Helper()
+
+	validObj := map[string]any{
+		"metadata": map[string]any{
+			"name": "crds.example.com",
+		},
+		"spec": map[string]any{
+			"group": "example.com",
+			"names": map[string]any{
+				"plural": "crds",
+			},
+			"versions": []any{
+				map[string]any{
+					"name":    "v1",
+					"served":  true,
+					"storage": true,
+				},
+			},
+		},
+	}
+
+	info, ok := k.extractCRDInfo(validObj)
+	if !ok {
+		t.Fatal("expected extraction to succeed")
+	}
+
+	if info.name != "crds.example.com" || info.group != "example.com" ||
+		info.resource != "crds" || info.version != "v1" {
+		t.Errorf("extracted fields do not match expected: %+v", info)
+	}
+
+	if !info.namespaced {
+		t.Error("expected namespaced to be true by default")
+	}
+}
+
+func testExtractCRDInfoClusterScoped(t *testing.T, k *k8sClient) {
+	t.Helper()
+
+	clusterObj := map[string]any{
+		"metadata": map[string]any{
+			"name": "clusters.example.com",
+		},
+		"spec": map[string]any{
+			"group": "example.com",
+			"scope": "Cluster",
+			"names": map[string]any{
+				"plural": "clusters",
+			},
+			"versions": []any{
+				map[string]any{
+					"name":    "v1",
+					"served":  true,
+					"storage": true,
+				},
+			},
+		},
+	}
+
+	info, ok := k.extractCRDInfo(clusterObj)
+	if !ok {
+		t.Fatal("expected extraction to succeed")
+	}
+
+	if info.namespaced {
+		t.Error("expected namespaced to be false for Cluster scope")
+	}
+}
+
+func testExtractCRDInfoInvalid(t *testing.T, k *k8sClient) {
+	t.Helper()
+
+	cases := []struct {
+		name string
+		obj  map[string]any
+	}{
+		{"missing metadata", map[string]any{}},
+		{"missing name", map[string]any{"metadata": map[string]any{}}},
+		{"missing spec", map[string]any{"metadata": map[string]any{"name": "something"}}},
+		{"missing versions", map[string]any{
+			"metadata": map[string]any{"name": "something"},
+			"spec":     map[string]any{"group": "test", "names": map[string]any{"plural": "tests"}},
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ok := k.extractCRDInfo(tc.obj)
+			if ok {
+				t.Errorf("expected failure for %s", tc.name)
+			}
+		})
+	}
 }
 
 func TestFindPreferredVersion(t *testing.T) {
@@ -249,6 +302,56 @@ func TestListResourcesAndYAML(t *testing.T) {
 
 	if !strings.Contains(yamlData, "hello: world") {
 		t.Errorf("yaml did not marshal expected values: %s", yamlData)
+	}
+}
+
+func TestListResourcesClusterScoped(t *testing.T) {
+	scheme := runtime.NewScheme()
+
+	crd := crdInfo{
+		name:       "clusters.example.com",
+		group:      "example.com",
+		version:    "v1",
+		resource:   "clusters",
+		namespaced: false,
+	}
+
+	testResource := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "example.com/v1",
+			"kind":       "Cluster",
+			"metadata": map[string]any{
+				"name": "my-cluster-res",
+			},
+		},
+	}
+
+	testResGVR := schema.GroupVersionResource{
+		Group:    "example.com",
+		Version:  "v1",
+		Resource: "clusters",
+	}
+
+	dynClient := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		testResGVR: "ClusterList",
+	}, testResource)
+
+	k := &k8sClient{
+		dynamic: dynClient,
+	}
+
+	// Test List resources - should work even if namespace is provided but ignored
+	resources, err := k.listResources(crd, "some-namespace")
+	if err != nil {
+		t.Fatalf("failed to list resources: %v", err)
+	}
+
+	if len(resources) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(resources))
+	}
+
+	if resources[0].name != "my-cluster-res" {
+		t.Errorf("unexpected resource extracted: %+v", resources[0])
 	}
 }
 

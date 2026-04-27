@@ -132,6 +132,8 @@ func TestFetchYAMLEdgeCases(t *testing.T) {
 			switch msg.(type) {
 			case yamlLoadedMsg, errMsg:
 				// Expected
+			default:
+				t.Fatalf("unexpected message type: %T", msg)
 			}
 		})
 	}
