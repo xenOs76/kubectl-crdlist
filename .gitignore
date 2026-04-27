@@ -2,3 +2,4 @@ kubectl-crdlist
 dist
 cover.out 
 coverage.out
+vendor
