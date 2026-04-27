@@ -529,7 +529,12 @@ func (m model) View() tea.View {
 	m.renderHeader(&s)
 
 	if m.err != nil {
-		msg := fmt.Sprintf("Error: %v\n\nPress 'esc' to go back, 'n' to toggle namespace, 'q' to quit.", m.err)
+		nsSnippet := ""
+		if m.state == stateResourceList || m.state == stateGroupResourceList {
+			nsSnippet = ", 'n' to toggle namespace"
+		}
+
+		msg := fmt.Sprintf("Error: %v\n\nPress 'esc' to go back%s, 'q' to quit.", m.err, nsSnippet)
 		s.WriteString(errorStyle.Render(msg))
 	} else if m.loading {
 		s.WriteString(dimStyle.Render("Loading data from cluster..."))

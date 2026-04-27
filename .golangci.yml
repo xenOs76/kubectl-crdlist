@@ -6,6 +6,7 @@ linters:
     - dupword
     - dupl
     - durationcheck
+    - errcheck
     - errorlint
     - errchkjson
     - misspell
@@ -60,12 +61,16 @@ linters:
           exclude: [""]
           arguments: [15]
 
-        # https://github.com/mgechev/revive/blob/HEAD/RULES_DESCRIPTIONS.md#cyclomatic
         - name: cyclomatic
           severity: warning
           disabled: false
           exclude: [""]
           arguments: [15]
+
+        - name: unhandled-error
+          severity: warning
+          disabled: false
+          exclude: [""]
 
   exclusions:
     generated: lax
