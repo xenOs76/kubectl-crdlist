@@ -36,8 +36,12 @@ const (
 
 // Messages used for async data fetching
 type (
-	CRDsLoadedMsg      []CRDInfo
+	// CRDsLoadedMsg is sent when the list of CRDs is successfully fetched.
+	CRDsLoadedMsg []CRDInfo
+	// ResourcesLoadedMsg is sent when a list of resources is successfully fetched.
 	ResourcesLoadedMsg []ResourceInfo
-	YAMLLoadedMsg      string
-	ErrMsg             error
+	// YAMLLoadedMsg is sent when a resource's YAML representation is successfully fetched.
+	YAMLLoadedMsg string
+	// ErrMsg is sent when an error occurs during an asynchronous operation.
+	ErrMsg error
 )

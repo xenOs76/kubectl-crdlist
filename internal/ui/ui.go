@@ -55,13 +55,15 @@ var (
 				Bold(true)
 )
 
+// Init initializes the TUI application by fetching the initial list of CRDs.
 func (m Model) Init() tea.Cmd {
 	return m.fetchCRDs()
 }
 
+// fetchCRDs returns a command to fetch all CRDs from the cluster.
 func (m Model) fetchCRDs() tea.Cmd {
 	return func() tea.Msg {
-		crds, err := m.K8s.ListCRDs()
+		crds, err := m.K8s.ListCRDs(m.Ctx)
 		if err != nil {
 			return model.ErrMsg(err)
 		}
@@ -70,6 +72,7 @@ func (m Model) fetchCRDs() tea.Cmd {
 	}
 }
 
+// fetchResources returns a command to fetch instances for the currently selected CRD.
 func (m Model) fetchResources() tea.Cmd {
 	return func() tea.Msg {
 		ns := m.CurrentNamespace
@@ -77,7 +80,7 @@ func (m Model) fetchResources() tea.Cmd {
 			ns = ""
 		}
 
-		res, err := m.K8s.ListResources(m.SelectedCRD, ns)
+		res, err := m.K8s.ListResources(m.Ctx, m.SelectedCRD, ns)
 		if err != nil {
 			return model.ErrMsg(err)
 		}
@@ -86,6 +89,7 @@ func (m Model) fetchResources() tea.Cmd {
 	}
 }
 
+// fetchGroupResources returns a command to fetch all instances of all CRDs in the current group.
 func (m Model) fetchGroupResources() tea.Cmd {
 	return func() tea.Msg {
 		ns := m.CurrentNamespace
@@ -104,12 +108,13 @@ func (m Model) fetchGroupResources() tea.Cmd {
 	}
 }
 
+// collectGroupResources iterates over all CRDs and fetches instances for those matching the current group.
 func (m Model) collectGroupResources(ns string) ([]model.ResourceInfo, error) {
 	var aggregated []model.ResourceInfo
 
 	for _, crd := range m.Crds {
 		if crd.Group == m.SelectedGroup {
-			res, err := m.K8s.ListResources(crd, ns)
+			res, err := m.K8s.ListResources(m.Ctx, crd, ns)
 			if err != nil {
 				return nil, err
 			}
@@ -121,6 +126,7 @@ func (m Model) collectGroupResources(ns string) ([]model.ResourceInfo, error) {
 	return aggregated, nil
 }
 
+// sortResources sorts a list of resource instances by namespace, CRD name, and resource name.
 func (Model) sortResources(res []model.ResourceInfo) {
 	slices.SortFunc(res, func(a, b model.ResourceInfo) int {
 		if a.Namespace != b.Namespace {
@@ -135,9 +141,10 @@ func (Model) sortResources(res []model.ResourceInfo) {
 	})
 }
 
+// fetchYAML returns a command to fetch the YAML representation of the currently selected resource instance.
 func (m Model) fetchYAML() tea.Cmd {
 	return func() tea.Msg {
-		yaml, err := m.K8s.FetchResourceYAML(m.SelectedCRD, m.SelectedRes.Name, m.SelectedRes.Namespace)
+		yaml, err := m.K8s.FetchResourceYAML(m.Ctx, m.SelectedCRD, m.SelectedRes.Name, m.SelectedRes.Namespace)
 		if err != nil {
 			return model.ErrMsg(err)
 		}
@@ -146,6 +153,7 @@ func (m Model) fetchYAML() tea.Cmd {
 	}
 }
 
+// Update handles incoming messages and updates the model's state.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -159,13 +167,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		slices.SortFunc(m.Crds, func(a, b model.CRDInfo) int {
 			return cmp.Compare(a.Group, b.Group)
 		})
-		m.FilteredCRDs = m.Crds
+		m.applyFilter()
 		m.Loading = false
 		m.CrdCursor = 0
 
 	case model.ResourcesLoadedMsg:
 		m.Resources = msg
-		m.FilteredResources = m.Resources
+		m.applyFilter()
 		m.Loading = false
 		m.ResourceCursor = 0
 		m.ResScrollOffset = 0
@@ -188,6 +196,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// handleKeyPress routes key presses based on the current input mode.
 func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.Mode == model.ModeFiltering {
 		return m.handleFilteringKeys(msg)
@@ -196,6 +205,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m.handleBrowsingKeys(msg)
 }
 
+// handleFilteringKeys handles keyboard input when the user is typing a filter string.
 func (m Model) handleFilteringKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 
@@ -213,11 +223,16 @@ func (m Model) handleFilteringKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleBrowsingKeys handles keyboard input when the user is browsing lists.
 func (m Model) handleBrowsingKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 
 	switch k {
 	case "ctrl+c", "q":
+		if m.Cancel != nil {
+			m.Cancel()
+		}
+
 		return m, tea.Quit
 	case "esc":
 		m.handleEscape()
@@ -237,6 +252,7 @@ func (m Model) handleBrowsingKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleNavigation handles arrow key and Vim-style navigation.
 func (m *Model) handleNavigation(k string) {
 	switch k {
 	case "up", "k", "ctrl+k":
@@ -251,6 +267,7 @@ func (m *Model) handleNavigation(k string) {
 	}
 }
 
+// handleActionKey handles high-level actions like toggling group view or activating filter.
 func (m Model) handleActionKey(k string) (tea.Model, tea.Cmd) {
 	if m.Err != nil {
 		return m, nil
@@ -267,11 +284,14 @@ func (m Model) handleActionKey(k string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleGroupTransition transitions the application to the group resources view.
 func (m Model) handleGroupTransition() (tea.Model, tea.Cmd) {
 	if m.State == model.StateCRDList && len(m.FilteredCRDs) > 0 {
+		m.saveFilter()
 		m.SelectedGroup = m.FilteredCRDs[m.CrdCursor].Group
 		m.State = model.StateGroupResourceList
 		m.Mode = model.ModeBrowsing // Ensure browsing mode on transition
+		m.loadFilter()
 		m.Loading = true
 
 		return m, m.fetchGroupResources()
@@ -280,12 +300,14 @@ func (m Model) handleGroupTransition() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleFilterActivation enables the filtering mode.
 func (m *Model) handleFilterActivation() {
 	if m.State == model.StateCRDList || m.State == model.StateResourceList || m.State == model.StateGroupResourceList {
 		m.Mode = model.ModeFiltering
 	}
 }
 
+// handleNamespaceToggle toggles between single namespace and all-namespaces view.
 func (m Model) handleNamespaceToggle() (tea.Model, tea.Cmd) {
 	m.Err = nil // Clear error on retry
 
@@ -306,6 +328,7 @@ func (m Model) handleNamespaceToggle() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleBackspace deletes the last character from the current filter.
 func (m *Model) handleBackspace() {
 	inListState := m.State == model.StateCRDList ||
 		m.State == model.StateResourceList ||
@@ -317,6 +340,7 @@ func (m *Model) handleBackspace() {
 	}
 }
 
+// handleDefaultKey appends a character to the current filter.
 func (m *Model) handleDefaultKey(k string) {
 	inListState := m.State == model.StateCRDList ||
 		m.State == model.StateResourceList ||
@@ -328,6 +352,7 @@ func (m *Model) handleDefaultKey(k string) {
 	}
 }
 
+// handleEscape handles the escape key to go back in navigation or exit filtering mode.
 func (m *Model) handleEscape() {
 	m.Err = nil
 
@@ -338,21 +363,27 @@ func (m *Model) handleEscape() {
 	}
 
 	if m.State == model.StateYAMLView {
+		m.saveFilter()
+
 		if m.SelectedGroup != "" {
 			m.State = model.StateGroupResourceList
 		} else {
 			m.State = model.StateResourceList
 		}
 
+		m.loadFilter()
+
 		return
 	}
 
 	if m.State == model.StateResourceList || m.State == model.StateGroupResourceList {
+		m.saveFilter()
 		m.State = model.StateCRDList
+		m.loadFilter()
 		m.SelectedGroup = ""
-		m.Filter = ""
 		m.FilteredCRDs = m.Crds
 		m.FilteredResources = m.Resources
+		m.applyFilter()
 
 		return
 	}
@@ -363,9 +394,11 @@ func (m *Model) handleEscape() {
 		m.FilteredResources = m.Resources
 		m.CrdCursor = 0
 		m.ResourceCursor = 0
+		m.saveFilter() // Sync back the cleared filter
 	}
 }
 
+// moveUp moves the cursor up by the specified amount.
 func (m *Model) moveUp(amount int) {
 	switch m.State {
 	case model.StateCRDList:
@@ -378,6 +411,7 @@ func (m *Model) moveUp(amount int) {
 	}
 }
 
+// moveUpCRD moves the CRD list cursor up.
 func (m *Model) moveUpCRD(amount int) {
 	m.CrdCursor -= amount
 	if m.CrdCursor < 0 {
@@ -389,6 +423,7 @@ func (m *Model) moveUpCRD(amount int) {
 	}
 }
 
+// moveUpRes moves the resource list cursor up.
 func (m *Model) moveUpRes(amount int) {
 	m.ResourceCursor -= amount
 	if m.ResourceCursor < 0 {
@@ -400,6 +435,7 @@ func (m *Model) moveUpRes(amount int) {
 	}
 }
 
+// moveUpYAML scrolls the YAML view up.
 func (m *Model) moveUpYAML(amount int) {
 	m.YamlScrollLine -= amount
 	if m.YamlScrollLine < 0 {
@@ -407,6 +443,7 @@ func (m *Model) moveUpYAML(amount int) {
 	}
 }
 
+// moveDown moves the cursor down by the specified amount.
 func (m *Model) moveDown(amount int) {
 	switch m.State {
 	case model.StateCRDList:
@@ -419,6 +456,7 @@ func (m *Model) moveDown(amount int) {
 	}
 }
 
+// moveDownYAML scrolls the YAML view down.
 func (m *Model) moveDownYAML(amount int) {
 	lines := strings.Split(m.SelectedYAML, "\n")
 
@@ -432,6 +470,7 @@ func (m *Model) moveDownYAML(amount int) {
 	}
 }
 
+// moveDownCRD moves the CRD list cursor down.
 func (m *Model) moveDownCRD(amount int) {
 	maxHeight := m.Height - 8
 
@@ -453,6 +492,7 @@ func (m *Model) moveDownCRD(amount int) {
 	}
 }
 
+// moveDownRes moves the resource list cursor down.
 func (m *Model) moveDownRes(amount int) {
 	maxHeight := m.Height - 8
 
@@ -474,20 +514,25 @@ func (m *Model) moveDownRes(amount int) {
 	}
 }
 
+// handleEnter processes the enter key for selecting items in lists.
 func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	if m.State == model.StateCRDList && len(m.FilteredCRDs) > 0 {
+		m.saveFilter()
 		m.SelectedCRD = m.FilteredCRDs[m.CrdCursor]
 		m.SelectedGroup = "" // Clear group if selecting single
 		m.State = model.StateResourceList
+		m.loadFilter()
 		m.Loading = true
 
 		return m, m.fetchResources()
 	}
 
 	if (m.State == model.StateResourceList || m.State == model.StateGroupResourceList) && len(m.FilteredResources) > 0 {
+		m.saveFilter()
 		m.SelectedRes = m.FilteredResources[m.ResourceCursor]
 		m.SelectedCRD = m.SelectedRes.CRD // Sync CRD for fetchYAML
 		m.State = model.StateYAMLView
+		m.loadFilter()
 		m.Loading = true
 
 		return m, m.fetchYAML()
@@ -496,6 +541,7 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// applyFilter updates the filtered lists based on the current filter string.
 func (m *Model) applyFilter() {
 	switch m.State {
 	case model.StateCRDList:
@@ -524,6 +570,7 @@ func (m *Model) applyFilter() {
 	}
 }
 
+// View renders the current state of the application to a string.
 func (m Model) View() tea.View {
 	var s strings.Builder
 
@@ -560,6 +607,7 @@ func (m Model) View() tea.View {
 	return tea.NewView(s.String())
 }
 
+// getPositionIndicator returns a string indicating the current scroll position in the list.
 func (m Model) getPositionIndicator() string {
 	var posIndicator string
 
@@ -581,6 +629,7 @@ func (m Model) getPositionIndicator() string {
 	return posIndicator
 }
 
+// renderStatusBar renders the status bar at the bottom of the screen.
 func (m Model) renderStatusBar(posIndicator string) string {
 	var legend string
 
@@ -605,6 +654,7 @@ func (m Model) renderStatusBar(posIndicator string) string {
 	return modeIndicator + " " + dimStyle.Render(posIndicator) + " " + statusStyle.Render(legend)
 }
 
+// renderHeader renders the application title and current navigation path.
 func (m Model) renderHeader(s *strings.Builder) {
 	header := titleStyle.Render("kubectl-crdlist")
 
@@ -623,6 +673,7 @@ func (m Model) renderHeader(s *strings.Builder) {
 	s.WriteString(header + "\n\n")
 }
 
+// renderCRDList renders the list of available Custom Resource Definitions.
 func (m Model) renderCRDList(s *strings.Builder) {
 	cursor := ""
 	if m.Mode == model.ModeFiltering {
@@ -655,6 +706,7 @@ func (m Model) renderCRDList(s *strings.Builder) {
 	}
 }
 
+// renderResourceList renders the list of instances for a single CRD.
 func (m Model) renderResourceList(s *strings.Builder) {
 	cursor := ""
 	if m.Mode == model.ModeFiltering {
@@ -700,6 +752,7 @@ func (m Model) renderResourceList(s *strings.Builder) {
 	}
 }
 
+// renderGroupResourceList renders instances of all CRDs in a single group.
 func (m Model) renderGroupResourceList(s *strings.Builder) {
 	cursor := ""
 	if m.Mode == model.ModeFiltering {
@@ -745,6 +798,7 @@ func (m Model) renderGroupResourceList(s *strings.Builder) {
 	}
 }
 
+// renderYAMLView renders the YAML content of a resource instance.
 func (m Model) renderYAMLView(s *strings.Builder) {
 	highlighted := m.highlightYAML(m.SelectedYAML)
 	lines := strings.Split(highlighted, "\n")
@@ -765,6 +819,7 @@ func (m Model) renderYAMLView(s *strings.Builder) {
 	}
 }
 
+// highlightYAML applies syntax highlighting to the provided YAML string.
 func (Model) highlightYAML(source string) string {
 	lexer := lexers.Get("yaml")
 
@@ -797,4 +852,31 @@ func (Model) highlightYAML(source string) string {
 	}
 
 	return sb.String()
+}
+
+// saveFilter saves the current filter string to the appropriate per-view storage field.
+func (m *Model) saveFilter() {
+	switch m.State {
+	case model.StateCRDList:
+		m.CRDFilter = m.Filter
+	case model.StateResourceList:
+		m.ResourceFilter = m.Filter
+	case model.StateGroupResourceList:
+		m.GroupResourceFilter = m.Filter
+	default:
+	}
+}
+
+// loadFilter loads the filter string from the appropriate per-view storage field.
+func (m *Model) loadFilter() {
+	switch m.State {
+	case model.StateCRDList:
+		m.Filter = m.CRDFilter
+	case model.StateResourceList:
+		m.Filter = m.ResourceFilter
+	case model.StateGroupResourceList:
+		m.Filter = m.GroupResourceFilter
+	default:
+		m.Filter = ""
+	}
 }

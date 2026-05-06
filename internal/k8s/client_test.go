@@ -1,6 +1,7 @@
 package k8s
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,6 +13,7 @@ import (
 	"k8s.io/client-go/dynamic/fake"
 )
 
+// TestExtractCRDInfo verifies the parsing logic for Custom Resource Definitions.
 func TestExtractCRDInfo(t *testing.T) {
 	k := &Client{}
 
@@ -28,6 +30,7 @@ func TestExtractCRDInfo(t *testing.T) {
 	})
 }
 
+// testExtractCRDInfoValid verifies extraction from a correctly formatted namespaced CRD.
 func testExtractCRDInfoValid(t *testing.T, k *Client) {
 	t.Helper()
 
@@ -59,6 +62,7 @@ func testExtractCRDInfoValid(t *testing.T, k *Client) {
 	assert.True(t, info.Namespaced, "expected namespaced to be true by default")
 }
 
+// testExtractCRDInfoClusterScoped verifies extraction from a cluster-scoped CRD.
 func testExtractCRDInfoClusterScoped(t *testing.T, k *Client) {
 	t.Helper()
 
@@ -87,6 +91,7 @@ func testExtractCRDInfoClusterScoped(t *testing.T, k *Client) {
 	assert.False(t, info.Namespaced, "expected namespaced to be false for Cluster scope")
 }
 
+// testExtractCRDInfoInvalid verifies that extraction fails correctly for malformed inputs.
 func testExtractCRDInfoInvalid(t *testing.T, k *Client) {
 	t.Helper()
 
@@ -111,6 +116,7 @@ func testExtractCRDInfoInvalid(t *testing.T, k *Client) {
 	}
 }
 
+// TestFindPreferredVersion verifies the logic for selecting the best API version.
 func TestFindPreferredVersion(t *testing.T) {
 	k := &Client{}
 
@@ -135,6 +141,7 @@ func TestFindPreferredVersion(t *testing.T) {
 	assert.Empty(t, versionEmpty)
 }
 
+// TestIsServedAndStored verifies the validation of API version status.
 func TestIsServedAndStored(t *testing.T) {
 	k := &Client{}
 
@@ -160,6 +167,7 @@ func TestIsServedAndStored(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// TestListCRDs verifies that the client correctly lists CRDs from the cluster.
 func TestListCRDs(t *testing.T) {
 	scheme := runtime.NewScheme()
 
@@ -200,21 +208,23 @@ func TestListCRDs(t *testing.T) {
 		Dynamic: dynClient,
 	}
 
-	crds, err := k.ListCRDs()
+	crds, err := k.ListCRDs(context.Background())
 	require.NoError(t, err)
 	require.Len(t, crds, 1)
 	assert.Equal(t, "testcrds.example.com", crds[0].Name)
 	assert.Equal(t, "testcrds", crds[0].Resource)
 }
 
+// TestListResourcesAndYAML verifies both resource listing and YAML fetching.
 func TestListResourcesAndYAML(t *testing.T) {
 	scheme := runtime.NewScheme()
 
 	crd := model.CRDInfo{
-		Name:     "testcrds.example.com",
-		Group:    "example.com",
-		Version:  "v1",
-		Resource: "testcrds",
+		Name:       "testcrds.example.com",
+		Group:      "example.com",
+		Version:    "v1",
+		Resource:   "testcrds",
+		Namespaced: true,
 	}
 
 	testResGVR := schema.GroupVersionResource{
@@ -246,18 +256,19 @@ func TestListResourcesAndYAML(t *testing.T) {
 	}
 
 	// Test List resources
-	resources, err := k.ListResources(crd, "default")
+	resources, err := k.ListResources(context.Background(), crd, "default")
 	require.NoError(t, err)
 	require.Len(t, resources, 1)
 	assert.Equal(t, "my-test-res", resources[0].Name)
 	assert.Equal(t, "default", resources[0].Namespace)
 
 	// Test YAML fetch
-	yamlData, err := k.FetchResourceYAML(crd, "my-test-res", "default")
+	yamlData, err := k.FetchResourceYAML(context.Background(), crd, "my-test-res", "default")
 	require.NoError(t, err)
 	assert.Contains(t, yamlData, "hello: world")
 }
 
+// TestListResourcesClusterScoped verifies listing for cluster-wide resources.
 func TestListResourcesClusterScoped(t *testing.T) {
 	scheme := runtime.NewScheme()
 
@@ -294,12 +305,13 @@ func TestListResourcesClusterScoped(t *testing.T) {
 	}
 
 	// Test List resources - should work even if namespace is provided but ignored
-	resources, err := k.ListResources(crd, "some-namespace")
+	resources, err := k.ListResources(context.Background(), crd, "some-namespace")
 	require.NoError(t, err)
 	require.Len(t, resources, 1)
 	assert.Equal(t, "my-cluster-res", resources[0].Name)
 }
 
+// TestInitK8sClient verifies the manual initialization of the client struct.
 func TestInitK8sClient(t *testing.T) {
 	t.Run("basic initialization", func(t *testing.T) {
 		scheme := runtime.NewScheme()
@@ -314,6 +326,7 @@ func TestInitK8sClient(t *testing.T) {
 	})
 }
 
+// TestExtractCRDInfoEdgeCases verifies extraction logic across various edge cases and malformed inputs.
 func TestExtractCRDInfoEdgeCases(t *testing.T) {
 	tests := []struct {
 		name     string

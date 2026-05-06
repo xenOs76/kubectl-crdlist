@@ -14,11 +14,13 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// Client handles communication with the Kubernetes API.
 type Client struct {
 	Dynamic   dynamic.Interface
 	Discovery discovery.DiscoveryInterface
 }
 
+// NewClient creates a new Kubernetes client using the provided configuration flags.
 func NewClient(flags *genericclioptions.ConfigFlags) (*Client, error) {
 	config, err := flags.ToRESTConfig()
 	if err != nil {
@@ -42,14 +44,14 @@ func NewClient(flags *genericclioptions.ConfigFlags) (*Client, error) {
 }
 
 // ListCRDs fetches all available CRDs in the cluster.
-func (k *Client) ListCRDs() ([]model.CRDInfo, error) {
+func (k *Client) ListCRDs(ctx context.Context) ([]model.CRDInfo, error) {
 	gvr := schema.GroupVersionResource{
 		Group:    "apiextensions.k8s.io",
 		Version:  "v1",
 		Resource: "customresourcedefinitions",
 	}
 
-	list, err := k.Dynamic.Resource(gvr).List(context.Background(), metav1.ListOptions{})
+	list, err := k.Dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list CRDs: %w", err)
 	}
@@ -66,6 +68,7 @@ func (k *Client) ListCRDs() ([]model.CRDInfo, error) {
 	return crds, nil
 }
 
+// extractCRDInfo parses a raw unstructured object into a CRDInfo struct.
 func (k *Client) extractCRDInfo(obj map[string]any) (model.CRDInfo, bool) {
 	name, ok := getString(obj, "metadata", "name")
 	if !ok {
@@ -92,6 +95,7 @@ func (k *Client) extractCRDInfo(obj map[string]any) (model.CRDInfo, bool) {
 	}, true
 }
 
+// findPreferredVersion selects the best API version from a list of CRD versions.
 func (k *Client) findPreferredVersion(versions []any) string {
 	for _, v := range versions {
 		if verName, ok := k.isServedAndStored(v); ok {
@@ -110,6 +114,7 @@ func (k *Client) findPreferredVersion(versions []any) string {
 	return ""
 }
 
+// isServedAndStored checks if a version is both served and stored in the cluster.
 func (*Client) isServedAndStored(v any) (string, bool) {
 	verMap, ok := v.(map[string]any)
 	if !ok {
@@ -128,7 +133,7 @@ func (*Client) isServedAndStored(v any) (string, bool) {
 }
 
 // ListResources fetches resources for a specific CRD.
-func (k *Client) ListResources(crd model.CRDInfo, namespace string) ([]model.ResourceInfo, error) {
+func (k *Client) ListResources(ctx context.Context, crd model.CRDInfo, namespace string) ([]model.ResourceInfo, error) {
 	gvr := schema.GroupVersionResource{
 		Group:    crd.Group,
 		Version:  crd.Version,
@@ -142,9 +147,9 @@ func (k *Client) ListResources(crd model.CRDInfo, namespace string) ([]model.Res
 	var err error
 
 	if crd.Namespaced {
-		list, err = listClient.Namespace(namespace).List(context.Background(), metav1.ListOptions{})
+		list, err = listClient.Namespace(namespace).List(ctx, metav1.ListOptions{})
 	} else {
-		list, err = listClient.List(context.Background(), metav1.ListOptions{})
+		list, err = listClient.List(ctx, metav1.ListOptions{})
 	}
 
 	if err != nil {
@@ -167,14 +172,14 @@ func (k *Client) ListResources(crd model.CRDInfo, namespace string) ([]model.Res
 
 // FetchResourceYAML fetches a resource and returns its YAML representation.
 // Strictly READ-ONLY.
-func (k *Client) FetchResourceYAML(crd model.CRDInfo, name, namespace string) (string, error) {
+func (k *Client) FetchResourceYAML(ctx context.Context, crd model.CRDInfo, name, namespace string) (string, error) {
 	gvr := schema.GroupVersionResource{
 		Group:    crd.Group,
 		Version:  crd.Version,
 		Resource: crd.Resource,
 	}
 
-	obj, err := k.Dynamic.Resource(gvr).Namespace(namespace).Get(context.Background(), name, metav1.GetOptions{})
+	obj, err := k.Dynamic.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to get resource %s/%s: %w", namespace, name, err)
 	}
@@ -190,6 +195,7 @@ func (k *Client) FetchResourceYAML(crd model.CRDInfo, name, namespace string) (s
 	return string(yamlData), nil
 }
 
+// getString safely extracts a nested string value from a map.
 func getString(obj map[string]any, path ...string) (string, bool) {
 	var current any = obj
 
@@ -210,6 +216,7 @@ func getString(obj map[string]any, path ...string) (string, bool) {
 	return s, ok
 }
 
+// getSlice safely extracts a nested slice of objects from a map.
 func getSlice(obj map[string]any, path ...string) ([]any, bool) {
 	var current any = obj
 

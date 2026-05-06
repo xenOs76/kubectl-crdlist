@@ -1,6 +1,10 @@
 package cmd
 
 import (
+	"context"
+	"errors"
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 	"github.com/xenos76/kubectl-crdlist/internal/k8s"
@@ -17,7 +21,7 @@ func Execute() error {
 	rootCmd := &cobra.Command{
 		Use:   "kubectl-crdlist",
 		Short: "A TUI for browsing Kubernetes CRDs and their instances",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			k, err := k8s.NewClient(configFlags)
 			if err != nil {
 				return err
@@ -28,12 +32,23 @@ func Execute() error {
 				ns = "default"
 			}
 
-			m := ui.NewModel(k, ns)
-			p := tea.NewProgram(m)
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+
+			m := ui.NewModel(ctx, cancel, k, ns)
+			p := tea.NewProgram(m, tea.WithContext(ctx))
 
 			_, err = p.Run()
+			if err != nil {
+				// Ignore context cancellation errors on exit
+				if errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "context canceled") {
+					return nil
+				}
 
-			return err
+				return err
+			}
+
+			return nil
 		},
 	}
 

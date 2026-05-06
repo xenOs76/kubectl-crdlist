@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -8,6 +9,7 @@ import (
 	"github.com/xenos76/kubectl-crdlist/internal/model"
 )
 
+// TestNewModel verifies the initialization of the TUI model with various namespaces.
 func TestNewModel(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -25,18 +27,22 @@ func TestNewModel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockClient := &k8s.Client{}
-			got := NewModel(mockClient, tt.namespace)
+			ctx, cancel := context.WithCancel(context.Background())
+			got := NewModel(ctx, cancel, mockClient, tt.namespace)
 			verifyInitialModel(t, &got, mockClient, expectedModel{tt.wantState, tt.wantLoading, tt.wantNS})
+			assert.Equal(t, ctx, got.Ctx)
 		})
 	}
 }
 
+// expectedModel holds the expected values for a newly initialized model.
 type expectedModel struct {
 	state   model.ViewState
 	loading bool
 	ns      string
 }
 
+// verifyInitialModel is a test helper that asserts a model is correctly initialized.
 func verifyInitialModel(t *testing.T, got *Model, mockClient *k8s.Client, want expectedModel) {
 	t.Helper()
 
