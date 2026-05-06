@@ -1,9 +1,10 @@
-package main
+package k8s
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/xenos76/kubectl-crdlist/internal/model"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -13,12 +14,14 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-type k8sClient struct {
-	dynamic   dynamic.Interface
-	discovery discovery.DiscoveryInterface
+// Client handles communication with the Kubernetes API.
+type Client struct {
+	Dynamic   dynamic.Interface
+	Discovery discovery.DiscoveryInterface
 }
 
-func initK8sClient(flags *genericclioptions.ConfigFlags) (*k8sClient, error) {
+// NewClient creates a new Kubernetes client using the provided configuration flags.
+func NewClient(flags *genericclioptions.ConfigFlags) (*Client, error) {
 	config, err := flags.ToRESTConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get rest config: %w", err)
@@ -34,35 +37,26 @@ func initK8sClient(flags *genericclioptions.ConfigFlags) (*k8sClient, error) {
 		return nil, err
 	}
 
-	return &k8sClient{
-		dynamic:   dyn,
-		discovery: disco,
+	return &Client{
+		Dynamic:   dyn,
+		Discovery: disco,
 	}, nil
 }
 
-// crdInfo holds basic info about a CRD.
-type crdInfo struct {
-	name       string
-	group      string
-	version    string
-	resource   string
-	namespaced bool
-}
-
-// listCRDs fetches all available CRDs in the cluster.
-func (k *k8sClient) listCRDs() ([]crdInfo, error) {
+// ListCRDs fetches all available CRDs in the cluster.
+func (k *Client) ListCRDs(ctx context.Context) ([]model.CRDInfo, error) {
 	gvr := schema.GroupVersionResource{
 		Group:    "apiextensions.k8s.io",
 		Version:  "v1",
 		Resource: "customresourcedefinitions",
 	}
 
-	list, err := k.dynamic.Resource(gvr).List(context.Background(), metav1.ListOptions{})
+	list, err := k.Dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list CRDs: %w", err)
 	}
 
-	var crds []crdInfo
+	var crds []model.CRDInfo
 
 	for _, item := range list.Items {
 		info, ok := k.extractCRDInfo(item.Object)
@@ -74,10 +68,11 @@ func (k *k8sClient) listCRDs() ([]crdInfo, error) {
 	return crds, nil
 }
 
-func (k *k8sClient) extractCRDInfo(obj map[string]any) (crdInfo, bool) {
+// extractCRDInfo parses a raw unstructured object into a CRDInfo struct.
+func (k *Client) extractCRDInfo(obj map[string]any) (model.CRDInfo, bool) {
 	name, ok := getString(obj, "metadata", "name")
 	if !ok {
-		return crdInfo{}, false
+		return model.CRDInfo{}, false
 	}
 
 	group, _ := getString(obj, "spec", "group")
@@ -85,22 +80,23 @@ func (k *k8sClient) extractCRDInfo(obj map[string]any) (crdInfo, bool) {
 
 	versions, ok := getSlice(obj, "spec", "versions")
 	if !ok {
-		return crdInfo{}, false
+		return model.CRDInfo{}, false
 	}
 
 	scope, _ := getString(obj, "spec", "scope")
 	namespaced := scope != "Cluster"
 
-	return crdInfo{
-		name:       name,
-		group:      group,
-		version:    k.findPreferredVersion(versions),
-		resource:   plural,
-		namespaced: namespaced,
+	return model.CRDInfo{
+		Name:       name,
+		Group:      group,
+		Version:    k.findPreferredVersion(versions),
+		Resource:   plural,
+		Namespaced: namespaced,
 	}, true
 }
 
-func (k *k8sClient) findPreferredVersion(versions []any) string {
+// findPreferredVersion selects the best API version from a list of CRD versions.
+func (k *Client) findPreferredVersion(versions []any) string {
 	for _, v := range versions {
 		if verName, ok := k.isServedAndStored(v); ok {
 			return verName
@@ -118,7 +114,8 @@ func (k *k8sClient) findPreferredVersion(versions []any) string {
 	return ""
 }
 
-func (*k8sClient) isServedAndStored(v any) (string, bool) {
+// isServedAndStored checks if a version is both served and stored in the cluster.
+func (*Client) isServedAndStored(v any) (string, bool) {
 	verMap, ok := v.(map[string]any)
 	if !ok {
 		return "", false
@@ -135,61 +132,54 @@ func (*k8sClient) isServedAndStored(v any) (string, bool) {
 	return "", false
 }
 
-// resourceInfo holds info about a specific resource instance.
-type resourceInfo struct {
-	name      string
-	namespace string
-	crd       crdInfo
-}
-
-// listResources fetches resources for a specific CRD.
-func (k *k8sClient) listResources(crd crdInfo, namespace string) ([]resourceInfo, error) {
+// ListResources fetches resources for a specific CRD.
+func (k *Client) ListResources(ctx context.Context, crd model.CRDInfo, namespace string) ([]model.ResourceInfo, error) {
 	gvr := schema.GroupVersionResource{
-		Group:    crd.group,
-		Version:  crd.version,
-		Resource: crd.resource,
+		Group:    crd.Group,
+		Version:  crd.Version,
+		Resource: crd.Resource,
 	}
 
-	listClient := k.dynamic.Resource(gvr)
+	listClient := k.Dynamic.Resource(gvr)
 
 	var list *unstructured.UnstructuredList
 
 	var err error
 
-	if crd.namespaced {
-		list, err = listClient.Namespace(namespace).List(context.Background(), metav1.ListOptions{})
+	if crd.Namespaced {
+		list, err = listClient.Namespace(namespace).List(ctx, metav1.ListOptions{})
 	} else {
-		list, err = listClient.List(context.Background(), metav1.ListOptions{})
+		list, err = listClient.List(ctx, metav1.ListOptions{})
 	}
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to list resources for %s (namespaced: %v) in namespace %s: %w",
-			crd.name, crd.namespaced, namespace, err)
+			crd.Name, crd.Namespaced, namespace, err)
 	}
 
-	var resources []resourceInfo
+	var resources []model.ResourceInfo
 
 	for _, item := range list.Items {
-		resources = append(resources, resourceInfo{
-			name:      item.GetName(),
-			namespace: item.GetNamespace(),
-			crd:       crd,
+		resources = append(resources, model.ResourceInfo{
+			Name:      item.GetName(),
+			Namespace: item.GetNamespace(),
+			CRD:       crd,
 		})
 	}
 
 	return resources, nil
 }
 
-// fetchResourceYAML fetches a resource and returns its YAML representation.
+// FetchResourceYAML fetches a resource and returns its YAML representation.
 // Strictly READ-ONLY.
-func (k *k8sClient) fetchResourceYAML(crd crdInfo, name, namespace string) (string, error) {
+func (k *Client) FetchResourceYAML(ctx context.Context, crd model.CRDInfo, name, namespace string) (string, error) {
 	gvr := schema.GroupVersionResource{
-		Group:    crd.group,
-		Version:  crd.version,
-		Resource: crd.resource,
+		Group:    crd.Group,
+		Version:  crd.Version,
+		Resource: crd.Resource,
 	}
 
-	obj, err := k.dynamic.Resource(gvr).Namespace(namespace).Get(context.Background(), name, metav1.GetOptions{})
+	obj, err := k.Dynamic.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to get resource %s/%s: %w", namespace, name, err)
 	}
@@ -205,6 +195,7 @@ func (k *k8sClient) fetchResourceYAML(crd crdInfo, name, namespace string) (stri
 	return string(yamlData), nil
 }
 
+// getString safely extracts a nested string value from a map.
 func getString(obj map[string]any, path ...string) (string, bool) {
 	var current any = obj
 
@@ -225,6 +216,7 @@ func getString(obj map[string]any, path ...string) (string, bool) {
 	return s, ok
 }
 
+// getSlice safely extracts a nested slice of objects from a map.
 func getSlice(obj map[string]any, path ...string) ([]any, bool) {
 	var current any = obj
 
