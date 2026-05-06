@@ -1,9 +1,11 @@
-package main
+package k8s
 
 import (
-	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/xenos76/kubectl-crdlist/internal/model"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -11,7 +13,7 @@ import (
 )
 
 func TestExtractCRDInfo(t *testing.T) {
-	k := &k8sClient{}
+	k := &Client{}
 
 	t.Run("valid CRD", func(t *testing.T) {
 		testExtractCRDInfoValid(t, k)
@@ -26,7 +28,7 @@ func TestExtractCRDInfo(t *testing.T) {
 	})
 }
 
-func testExtractCRDInfoValid(t *testing.T, k *k8sClient) {
+func testExtractCRDInfoValid(t *testing.T, k *Client) {
 	t.Helper()
 
 	validObj := map[string]any{
@@ -49,21 +51,15 @@ func testExtractCRDInfoValid(t *testing.T, k *k8sClient) {
 	}
 
 	info, ok := k.extractCRDInfo(validObj)
-	if !ok {
-		t.Fatal("expected extraction to succeed")
-	}
-
-	if info.name != "crds.example.com" || info.group != "example.com" ||
-		info.resource != "crds" || info.version != "v1" {
-		t.Errorf("extracted fields do not match expected: %+v", info)
-	}
-
-	if !info.namespaced {
-		t.Error("expected namespaced to be true by default")
-	}
+	require.True(t, ok, "expected extraction to succeed")
+	assert.Equal(t, "crds.example.com", info.Name)
+	assert.Equal(t, "example.com", info.Group)
+	assert.Equal(t, "crds", info.Resource)
+	assert.Equal(t, "v1", info.Version)
+	assert.True(t, info.Namespaced, "expected namespaced to be true by default")
 }
 
-func testExtractCRDInfoClusterScoped(t *testing.T, k *k8sClient) {
+func testExtractCRDInfoClusterScoped(t *testing.T, k *Client) {
 	t.Helper()
 
 	clusterObj := map[string]any{
@@ -87,16 +83,11 @@ func testExtractCRDInfoClusterScoped(t *testing.T, k *k8sClient) {
 	}
 
 	info, ok := k.extractCRDInfo(clusterObj)
-	if !ok {
-		t.Fatal("expected extraction to succeed")
-	}
-
-	if info.namespaced {
-		t.Error("expected namespaced to be false for Cluster scope")
-	}
+	require.True(t, ok, "expected extraction to succeed")
+	assert.False(t, info.Namespaced, "expected namespaced to be false for Cluster scope")
 }
 
-func testExtractCRDInfoInvalid(t *testing.T, k *k8sClient) {
+func testExtractCRDInfoInvalid(t *testing.T, k *Client) {
 	t.Helper()
 
 	cases := []struct {
@@ -115,15 +106,13 @@ func testExtractCRDInfoInvalid(t *testing.T, k *k8sClient) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, ok := k.extractCRDInfo(tc.obj)
-			if ok {
-				t.Errorf("expected failure for %s", tc.name)
-			}
+			assert.False(t, ok, "expected failure for %s", tc.name)
 		})
 	}
 }
 
 func TestFindPreferredVersion(t *testing.T) {
-	k := &k8sClient{}
+	k := &Client{}
 
 	versions := []any{
 		map[string]any{"name": "v1alpha1", "served": true, "storage": false},
@@ -131,9 +120,7 @@ func TestFindPreferredVersion(t *testing.T) {
 	}
 
 	version := k.findPreferredVersion(versions)
-	if version != "v1" {
-		t.Errorf("expected preferred version v1, got %s", version)
-	}
+	assert.Equal(t, "v1", version)
 
 	// Test fallback to first if none match both
 	versionsFallback := []any{
@@ -141,51 +128,36 @@ func TestFindPreferredVersion(t *testing.T) {
 	}
 
 	versionFallback := k.findPreferredVersion(versionsFallback)
-	if versionFallback != "v1beta1" {
-		t.Errorf("expected fallback version v1beta1, got %s", versionFallback)
-	}
+	assert.Equal(t, "v1beta1", versionFallback)
 
 	// Test totally invalid version map
 	versionEmpty := k.findPreferredVersion([]any{"invalid"})
-	if versionEmpty != "" {
-		t.Errorf("expected empty string for invalid versions, got %s", versionEmpty)
-	}
+	assert.Empty(t, versionEmpty)
 }
 
 func TestIsServedAndStored(t *testing.T) {
-	k := &k8sClient{}
+	k := &Client{}
 
 	// Valid
 	v1 := map[string]any{"name": "v1", "served": true, "storage": true}
-
 	name, ok := k.isServedAndStored(v1)
-	if !ok || name != "v1" {
-		t.Error("expected v1 to be served and stored")
-	}
+	assert.True(t, ok)
+	assert.Equal(t, "v1", name)
 
 	// Not storage
 	v2 := map[string]any{"name": "v2", "served": true, "storage": false}
-
 	_, ok = k.isServedAndStored(v2)
-	if ok {
-		t.Error("expected v2 to fail storage check")
-	}
+	assert.False(t, ok)
 
 	// Not served
 	v3 := map[string]any{"name": "v3", "served": false, "storage": true}
-
 	_, ok = k.isServedAndStored(v3)
-	if ok {
-		t.Error("expected v3 to fail served check")
-	}
+	assert.False(t, ok)
 
 	// Invalid types
 	v4 := map[string]any{"name": "v4", "served": "yes", "storage": 1}
-
 	_, ok = k.isServedAndStored(v4)
-	if ok {
-		t.Error("expected v4 to fail type assertions")
-	}
+	assert.False(t, ok)
 }
 
 func TestListCRDs(t *testing.T) {
@@ -224,32 +196,25 @@ func TestListCRDs(t *testing.T) {
 		crdGVR: "CustomResourceDefinitionList",
 	}, testCRD)
 
-	k := &k8sClient{
-		dynamic: dynClient,
+	k := &Client{
+		Dynamic: dynClient,
 	}
 
-	crds, err := k.listCRDs()
-	if err != nil {
-		t.Fatalf("failed to list crds: %v", err)
-	}
-
-	if len(crds) != 1 {
-		t.Fatalf("expected 1 CRD, got %d", len(crds))
-	}
-
-	if crds[0].name != "testcrds.example.com" || crds[0].resource != "testcrds" {
-		t.Errorf("unexpected CRD parsed: %+v", crds[0])
-	}
+	crds, err := k.ListCRDs()
+	require.NoError(t, err)
+	require.Len(t, crds, 1)
+	assert.Equal(t, "testcrds.example.com", crds[0].Name)
+	assert.Equal(t, "testcrds", crds[0].Resource)
 }
 
 func TestListResourcesAndYAML(t *testing.T) {
 	scheme := runtime.NewScheme()
 
-	crd := crdInfo{
-		name:     "testcrds.example.com",
-		group:    "example.com",
-		version:  "v1",
-		resource: "testcrds",
+	crd := model.CRDInfo{
+		Name:     "testcrds.example.com",
+		Group:    "example.com",
+		Version:  "v1",
+		Resource: "testcrds",
 	}
 
 	testResGVR := schema.GroupVersionResource{
@@ -276,44 +241,32 @@ func TestListResourcesAndYAML(t *testing.T) {
 		testResGVR: "TestCrdList",
 	}, testResource)
 
-	k := &k8sClient{
-		dynamic: dynClient,
+	k := &Client{
+		Dynamic: dynClient,
 	}
 
 	// Test List resources
-	resources, err := k.listResources(crd, "default")
-	if err != nil {
-		t.Fatalf("failed to list resources: %v", err)
-	}
-
-	if len(resources) != 1 {
-		t.Fatalf("expected 1 resource, got %d", len(resources))
-	}
-
-	if resources[0].name != "my-test-res" || resources[0].namespace != "default" {
-		t.Errorf("unexpected resource extracted: %+v", resources[0])
-	}
+	resources, err := k.ListResources(crd, "default")
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+	assert.Equal(t, "my-test-res", resources[0].Name)
+	assert.Equal(t, "default", resources[0].Namespace)
 
 	// Test YAML fetch
-	yamlData, err := k.fetchResourceYAML(crd, "my-test-res", "default")
-	if err != nil {
-		t.Fatalf("failed to fetch yaml: %v", err)
-	}
-
-	if !strings.Contains(yamlData, "hello: world") {
-		t.Errorf("yaml did not marshal expected values: %s", yamlData)
-	}
+	yamlData, err := k.FetchResourceYAML(crd, "my-test-res", "default")
+	require.NoError(t, err)
+	assert.Contains(t, yamlData, "hello: world")
 }
 
 func TestListResourcesClusterScoped(t *testing.T) {
 	scheme := runtime.NewScheme()
 
-	crd := crdInfo{
-		name:       "clusters.example.com",
-		group:      "example.com",
-		version:    "v1",
-		resource:   "clusters",
-		namespaced: false,
+	crd := model.CRDInfo{
+		Name:       "clusters.example.com",
+		Group:      "example.com",
+		Version:    "v1",
+		Resource:   "clusters",
+		Namespaced: false,
 	}
 
 	testResource := &unstructured.Unstructured{
@@ -336,87 +289,29 @@ func TestListResourcesClusterScoped(t *testing.T) {
 		testResGVR: "ClusterList",
 	}, testResource)
 
-	k := &k8sClient{
-		dynamic: dynClient,
+	k := &Client{
+		Dynamic: dynClient,
 	}
 
 	// Test List resources - should work even if namespace is provided but ignored
-	resources, err := k.listResources(crd, "some-namespace")
-	if err != nil {
-		t.Fatalf("failed to list resources: %v", err)
-	}
-
-	if len(resources) != 1 {
-		t.Fatalf("expected 1 resource, got %d", len(resources))
-	}
-
-	if resources[0].name != "my-cluster-res" {
-		t.Errorf("unexpected resource extracted: %+v", resources[0])
-	}
+	resources, err := k.ListResources(crd, "some-namespace")
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+	assert.Equal(t, "my-cluster-res", resources[0].Name)
 }
 
 func TestInitK8sClient(t *testing.T) {
-	tests := []struct {
-		name    string
-		wantErr bool
-	}{
-		{
-			name:    "basic initialization",
-			wantErr: false,
-		},
-	}
+	t.Run("basic initialization", func(t *testing.T) {
+		scheme := runtime.NewScheme()
+		dynamicClient := fake.NewSimpleDynamicClient(scheme)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// We can't easily test with real kubeconfig in unit tests
-			// Just verify that we can create a k8sClient with mock clients
-			scheme := runtime.NewScheme()
-			dynamicClient := fake.NewSimpleDynamicClient(scheme)
+		k := &Client{
+			Dynamic: dynamicClient,
+		}
 
-			k := &k8sClient{
-				dynamic: dynamicClient,
-			}
-
-			if k == nil {
-				t.Error("k8sClient creation failed")
-			}
-
-			if k.dynamic == nil {
-				t.Error("dynamic client not set")
-			}
-		})
-	}
-}
-
-func TestListCRDsError(t *testing.T) {
-	// Create a fake dynamic client with proper schema setup
-	scheme := runtime.NewScheme()
-	gvr := schema.GroupVersionResource{
-		Group:    "apiextensions.k8s.io",
-		Version:  "v1",
-		Resource: "customresourcedefinitions",
-	}
-
-	dynamicClient := fake.NewSimpleDynamicClientWithCustomListKinds(
-		scheme,
-		map[schema.GroupVersionResource]string{
-			gvr: "CustomResourceDefinitionList",
-		},
-	)
-
-	k := &k8sClient{
-		dynamic: dynamicClient,
-	}
-
-	// Even with empty fake client, listCRDs should handle it gracefully
-	crds, err := k.listCRDs()
-
-	// Should either succeed with empty list or fail gracefully
-	if err != nil {
-		t.Logf("Expected behavior: got error %v", err)
-	} else if crds != nil {
-		t.Logf("Got CRD list: %d items", len(crds))
-	}
+		require.NotNil(t, k)
+		assert.NotNil(t, k.Dynamic)
+	})
 }
 
 func TestExtractCRDInfoEdgeCases(t *testing.T) {
@@ -479,16 +374,14 @@ func TestExtractCRDInfoEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			k := &k8sClient{}
+			k := &Client{}
 
 			info, ok := k.extractCRDInfo(tt.obj)
 
-			if ok != tt.wantOk {
-				t.Errorf("ok = %v, want %v", ok, tt.wantOk)
-			}
+			assert.Equal(t, tt.wantOk, ok)
 
-			if ok && info.name != tt.wantName {
-				t.Errorf("name = %q, want %q", info.name, tt.wantName)
+			if ok {
+				assert.Equal(t, tt.wantName, info.Name)
 			}
 		})
 	}
