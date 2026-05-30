@@ -50,6 +50,9 @@ type Model struct {
 	SelectedYAML   string
 	YamlScrollLine int
 	SelectedRes    model.ResourceInfo
+
+	// resumingFromEdit suppresses stale renders between kubectl edit exit and EditFinishedMsg.
+	resumingFromEdit bool
 }
 
 // NewModel creates a new TUI model with the provided dependencies.

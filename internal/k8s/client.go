@@ -16,8 +16,9 @@ import (
 
 // Client handles communication with the Kubernetes API.
 type Client struct {
-	Dynamic   dynamic.Interface
-	Discovery discovery.DiscoveryInterface
+	Dynamic     dynamic.Interface
+	Discovery   discovery.DiscoveryInterface
+	ConfigFlags *genericclioptions.ConfigFlags
 }
 
 // NewClient creates a new Kubernetes client using the provided configuration flags.
@@ -38,8 +39,9 @@ func NewClient(flags *genericclioptions.ConfigFlags) (*Client, error) {
 	}
 
 	return &Client{
-		Dynamic:   dyn,
-		Discovery: disco,
+		Dynamic:     dyn,
+		Discovery:   disco,
+		ConfigFlags: flags,
 	}, nil
 }
 

@@ -45,3 +45,11 @@ type (
 	// ErrMsg is sent when an error occurs during an asynchronous operation.
 	ErrMsg error
 )
+
+// EditPendingMsg is sent immediately before kubectl edit runs.
+type EditPendingMsg struct{}
+
+// EditFinishedMsg is sent when kubectl edit completes.
+type EditFinishedMsg struct {
+	Err error
+}

@@ -141,6 +141,64 @@ func (Model) sortResources(res []model.ResourceInfo) {
 	})
 }
 
+// clearScreenCmd returns a command that clears the terminal before the next render.
+func clearScreenCmd() tea.Cmd {
+	return func() tea.Msg {
+		return tea.ClearScreen()
+	}
+}
+
+// windowSizeCmd returns a command that re-applies the terminal size to force a full redraw.
+func windowSizeCmd(width, height int) tea.Cmd {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+
+	return func() tea.Msg {
+		return tea.WindowSizeMsg{Width: width, Height: height}
+	}
+}
+
+// postEditRefreshCmd clears the screen, optionally resizes, then refetches YAML.
+func (m Model) postEditRefreshCmd() tea.Cmd {
+	cmds := []tea.Cmd{clearScreenCmd()}
+
+	if resize := windowSizeCmd(m.Width, m.Height); resize != nil {
+		cmds = append(cmds, resize)
+	}
+
+	cmds = append(cmds, m.fetchYAML())
+
+	return tea.Sequence(cmds...)
+}
+
+// buildView wraps content in a View with alt screen enabled.
+func buildView(content string) tea.View {
+	view := tea.NewView(content)
+	view.AltScreen = true
+
+	return view
+}
+
+// startEdit launches kubectl edit for the currently selected resource.
+func (m Model) startEdit() (tea.Model, tea.Cmd) {
+	m.Err = nil
+
+	cmd, err := m.K8s.KubectlEditCommand(m.Ctx, m.SelectedCRD, m.SelectedRes)
+	if err != nil {
+		m.Err = err
+
+		return m, nil
+	}
+
+	return m, tea.Sequence(
+		func() tea.Msg { return model.EditPendingMsg{} },
+		tea.ExecProcess(cmd, func(err error) tea.Msg {
+			return model.EditFinishedMsg{Err: err}
+		}),
+	)
+}
+
 // fetchYAML returns a command to fetch the YAML representation of the currently selected resource instance.
 func (m Model) fetchYAML() tea.Cmd {
 	return func() tea.Msg {
@@ -186,6 +244,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case model.ErrMsg:
 		m.Err = msg
 		m.Loading = false
+
+	case model.EditPendingMsg:
+		m.resumingFromEdit = true
+
+	case model.EditFinishedMsg:
+		m.resumingFromEdit = false
+
+		if msg.Err != nil {
+			m.Err = msg.Err
+			m.Loading = false
+
+			return m, clearScreenCmd()
+		}
+
+		m.Loading = true
+
+		return m, m.postEditRefreshCmd()
 
 	case tea.KeyPressMsg:
 		return m.handleKeyPress(msg)
@@ -243,6 +318,10 @@ func (m Model) handleBrowsingKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleEnter()
 	case "n":
 		return m.handleNamespaceToggle()
+	case "e":
+		if m.State == model.StateYAMLView {
+			return m.startEdit()
+		}
 	case "g", "/":
 		return m.handleActionKey(k)
 	default:
@@ -572,6 +651,10 @@ func (m *Model) applyFilter() {
 
 // View renders the current state of the application to a string.
 func (m Model) View() tea.View {
+	if m.resumingFromEdit {
+		return buildView("")
+	}
+
 	var s strings.Builder
 
 	m.renderHeader(&s)
@@ -604,7 +687,7 @@ func (m Model) View() tea.View {
 
 	s.WriteString("\n" + m.renderStatusBar(posIndicator))
 
-	return tea.NewView(s.String())
+	return buildView(s.String())
 }
 
 // getPositionIndicator returns a string indicating the current scroll position in the list.
@@ -645,7 +728,7 @@ func (m Model) renderStatusBar(posIndicator string) string {
 		case model.StateResourceList, model.StateGroupResourceList:
 			legend = "↑/↓, j/k, ^d/^u: navigate • enter: view • n: namespace • esc: back • q: quit"
 		case model.StateYAMLView:
-			legend = "↑/↓, j/k, ^d/^u: scroll • esc: back • q: quit"
+			legend = "↑/↓, j/k, ^d/^u: scroll • e: edit • esc: back • q: quit"
 		default:
 			legend = "/: filter • ↑/↓, j/k, ^d/^u: navigate • enter: select • g: group • esc: back • q: quit"
 		}
