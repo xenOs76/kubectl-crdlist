@@ -1,11 +1,20 @@
+## 0.3.0 (2026-05-30)
+
+### Feat
+
+    Added resource editing functionality. Users can now edit Kubernetes custom resources directly from the interface using their configured editor and apply changes back to the cluster.
+
+### Chore
+
+    Updated Go version to 1.26 and bumped Kubernetes and related project dependencies.
+
 ## 0.2.0 (2026-05-06)
 
 ### Fix
 
 - missing context propagation for listing function
-- filter persistence per view in the tui.
-fix: expicit discard of Fprintf return values.
-fix: missing test on namescaped resources.
+- filter persistence per view in the tui. fix: expicit discard of Fprintf return
+  values. fix: missing test on namescaped resources.
 
 ### Refactor
 
