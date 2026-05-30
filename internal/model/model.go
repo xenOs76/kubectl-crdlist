@@ -45,3 +45,11 @@ type (
 	// ErrMsg is sent when an error occurs during an asynchronous operation.
 	ErrMsg error
 )
+
+// EditPendingMsg is sent immediately before the resource editor runs.
+type EditPendingMsg struct{}
+
+// EditFinishedMsg is sent when the resource editor exits.
+type EditFinishedMsg struct {
+	Err error
+}
