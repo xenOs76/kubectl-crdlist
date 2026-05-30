@@ -118,6 +118,13 @@ func TestBeginResourceEditWritesManifest(t *testing.T) {
 	session.Cleanup()
 }
 
+func TestCompleteResourceEditNilSession(t *testing.T) {
+	k := &Client{}
+	err := k.CompleteResourceEdit(context.Background(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nil EditSession")
+}
+
 func TestCompleteResourceEditUpdatesResource(t *testing.T) {
 	crdGVR := schema.GroupVersionResource{
 		Group:    "example.com",

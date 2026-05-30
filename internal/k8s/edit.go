@@ -106,6 +106,10 @@ func (k *Client) BeginResourceEdit(
 
 // CompleteResourceEdit reads the edited manifest and updates the resource in the cluster.
 func (k *Client) CompleteResourceEdit(ctx context.Context, session *EditSession) error {
+	if session == nil {
+		return errors.New("CompleteResourceEdit: nil EditSession")
+	}
+
 	defer session.Cleanup()
 
 	edited, err := os.ReadFile(session.tempFile)
