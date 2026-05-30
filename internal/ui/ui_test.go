@@ -3,8 +3,6 @@ package ui
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -15,8 +13,40 @@ import (
 	"github.com/xenos76/kubectl-crdlist/internal/model"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic/fake"
 )
+
+func testEditK8sClient(t *testing.T) *k8s.Client {
+	t.Helper()
+
+	crdGVR := schema.GroupVersionResource{
+		Group:    "example.com",
+		Version:  "v1",
+		Resource: "widgets",
+	}
+
+	obj := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "example.com/v1",
+			"kind":       "Widget",
+			"metadata": map[string]any{
+				"name":            "my-widget",
+				"namespace":       "default",
+				"resourceVersion": "1",
+			},
+			"spec": map[string]any{},
+		},
+	}
+
+	scheme := runtime.NewScheme()
+
+	return &k8s.Client{
+		Dynamic: fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+			crdGVR: "WidgetList",
+		}, obj),
+	}
+}
 
 // assertModel is a test helper that asserts a tea.Model is a Model.
 func assertModel(t *testing.T, m tea.Model) Model {
@@ -161,21 +191,19 @@ func TestHandleBrowsingKeysEditInCRDList(t *testing.T) {
 	assert.Equal(t, model.StateCRDList, updated.State)
 }
 
-// TestHandleBrowsingKeysEditInYAMLView verifies e starts kubectl edit in YAML view.
+// TestHandleBrowsingKeysEditInYAMLView verifies e starts the editor in YAML view.
 func TestHandleBrowsingKeysEditInYAMLView(t *testing.T) {
-	tmp := t.TempDir()
-	fakeKubectl := filepath.Join(tmp, "kubectl")
-	err := os.WriteFile(fakeKubectl, []byte("#!/bin/sh\nexit 0\n"), 0o755)
-	require.NoError(t, err)
-	t.Setenv("PATH", tmp)
+	t.Setenv("KUBE_EDITOR", "true")
+	t.Setenv("SHELL", "/bin/sh")
 
 	m := Model{
 		State: model.StateYAMLView,
 		Mode:  model.ModeBrowsing,
 		Ctx:   context.Background(),
-		K8s:   &k8s.Client{},
+		K8s:   testEditK8sClient(t),
 		SelectedCRD: model.CRDInfo{
 			Group:      "example.com",
+			Version:    "v1",
 			Resource:   "widgets",
 			Namespaced: true,
 		},
@@ -226,7 +254,7 @@ func TestViewUsesAltScreen(t *testing.T) {
 	assert.NotEmpty(t, view.Content)
 }
 
-// TestViewEmptyWhileResumingFromEdit verifies stale content is suppressed after kubectl edit.
+// TestViewEmptyWhileResumingFromEdit verifies stale content is suppressed while the editor runs.
 func TestViewEmptyWhileResumingFromEdit(t *testing.T) {
 	m := Model{
 		State:            model.StateYAMLView,
@@ -238,7 +266,7 @@ func TestViewEmptyWhileResumingFromEdit(t *testing.T) {
 
 	view := m.View()
 
-	assert.True(t, view.AltScreen)
+	assert.False(t, view.AltScreen)
 	assert.Empty(t, view.Content)
 }
 
@@ -255,19 +283,17 @@ func TestUpdateEditPendingMsg(t *testing.T) {
 
 // TestStartEditReturnsPendingThenExec verifies edit starts with EditPendingMsg before exec.
 func TestStartEditReturnsPendingThenExec(t *testing.T) {
-	tmp := t.TempDir()
-	fakeKubectl := filepath.Join(tmp, "kubectl")
-	err := os.WriteFile(fakeKubectl, []byte("#!/bin/sh\nexit 0\n"), 0o755)
-	require.NoError(t, err)
-	t.Setenv("PATH", tmp)
+	t.Setenv("KUBE_EDITOR", "true")
+	t.Setenv("SHELL", "/bin/sh")
 
 	m := Model{
 		State: model.StateYAMLView,
 		Mode:  model.ModeBrowsing,
 		Ctx:   context.Background(),
-		K8s:   &k8s.Client{},
+		K8s:   testEditK8sClient(t),
 		SelectedCRD: model.CRDInfo{
 			Group:      "example.com",
+			Version:    "v1",
 			Resource:   "widgets",
 			Namespaced: true,
 		},
@@ -277,8 +303,11 @@ func TestStartEditReturnsPendingThenExec(t *testing.T) {
 		},
 	}
 
-	_, cmd := m.startEdit()
+	newModel, cmd := m.startEdit()
 	require.NotNil(t, cmd)
+
+	updated := assertModel(t, newModel)
+	assert.True(t, updated.resumingFromEdit)
 
 	first := firstCmdFromSequence(t, cmd)
 	assert.Equal(t, model.EditPendingMsg{}, first())

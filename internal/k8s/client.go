@@ -172,16 +172,30 @@ func (k *Client) ListResources(ctx context.Context, crd model.CRDInfo, namespace
 	return resources, nil
 }
 
-// FetchResourceYAML fetches a resource and returns its YAML representation.
-// Strictly READ-ONLY.
-func (k *Client) FetchResourceYAML(ctx context.Context, crd model.CRDInfo, name, namespace string) (string, error) {
+func (k *Client) getResource(
+	ctx context.Context,
+	crd model.CRDInfo,
+	name, namespace string,
+) (*unstructured.Unstructured, error) {
 	gvr := schema.GroupVersionResource{
 		Group:    crd.Group,
 		Version:  crd.Version,
 		Resource: crd.Resource,
 	}
 
-	obj, err := k.Dynamic.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	client := k.Dynamic.Resource(gvr)
+
+	if crd.Namespaced {
+		return client.Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	}
+
+	return client.Get(ctx, name, metav1.GetOptions{})
+}
+
+// FetchResourceYAML fetches a resource and returns its YAML representation.
+// Strictly READ-ONLY.
+func (k *Client) FetchResourceYAML(ctx context.Context, crd model.CRDInfo, name, namespace string) (string, error) {
+	obj, err := k.getResource(ctx, crd, name, namespace)
 	if err != nil {
 		return "", fmt.Errorf("failed to get resource %s/%s: %w", namespace, name, err)
 	}

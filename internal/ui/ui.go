@@ -172,24 +172,28 @@ func (m Model) postEditRefreshCmd() tea.Cmd {
 	return tea.Sequence(cmds...)
 }
 
-// buildView wraps content in a View with alt screen enabled.
-func buildView(content string) tea.View {
+// buildView wraps content in a View, optionally using the alternate screen buffer.
+func buildView(content string, altScreen bool) tea.View {
 	view := tea.NewView(content)
-	view.AltScreen = true
+	view.AltScreen = altScreen
 
 	return view
 }
 
-// startEdit launches kubectl edit for the currently selected resource.
+// startEdit opens the selected resource in the user's editor and applies changes on save.
 func (m Model) startEdit() (tea.Model, tea.Cmd) {
 	m.Err = nil
+	m.resumingFromEdit = true
 
-	cmd, err := m.K8s.KubectlEditCommand(m.Ctx, m.SelectedCRD, m.SelectedRes)
+	session, cmd, err := m.K8s.BeginResourceEdit(m.Ctx, m.SelectedCRD, m.SelectedRes)
 	if err != nil {
 		m.Err = err
+		m.resumingFromEdit = false
 
 		return m, nil
 	}
+
+	m.editSession = session
 
 	return m, tea.Sequence(
 		func() tea.Msg { return model.EditPendingMsg{} },
@@ -250,6 +254,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case model.EditFinishedMsg:
 		m.resumingFromEdit = false
+
+		session := m.editSession
+		m.editSession = nil
+
+		if session != nil {
+			if msg.Err != nil {
+				session.Cleanup()
+			} else if applyErr := m.K8s.CompleteResourceEdit(m.Ctx, session); applyErr != nil {
+				msg.Err = applyErr
+			}
+		}
 
 		if msg.Err != nil {
 			m.Err = msg.Err
@@ -652,7 +667,8 @@ func (m *Model) applyFilter() {
 // View renders the current state of the application to a string.
 func (m Model) View() tea.View {
 	if m.resumingFromEdit {
-		return buildView("")
+		// Leave the alt screen before the editor so it runs on the main buffer.
+		return buildView("", false)
 	}
 
 	var s strings.Builder
@@ -687,7 +703,7 @@ func (m Model) View() tea.View {
 
 	s.WriteString("\n" + m.renderStatusBar(posIndicator))
 
-	return buildView(s.String())
+	return buildView(s.String(), true)
 }
 
 // getPositionIndicator returns a string indicating the current scroll position in the list.
@@ -728,7 +744,7 @@ func (m Model) renderStatusBar(posIndicator string) string {
 		case model.StateResourceList, model.StateGroupResourceList:
 			legend = "↑/↓, j/k, ^d/^u: navigate • enter: view • n: namespace • esc: back • q: quit"
 		case model.StateYAMLView:
-			legend = "↑/↓, j/k, ^d/^u: scroll • e: edit • esc: back • q: quit"
+			legend = "↑/↓, j/k, ^d/^u: scroll • e: edit (keep apiVersion/kind/name) • esc: back • q: quit"
 		default:
 			legend = "/: filter • ↑/↓, j/k, ^d/^u: navigate • enter: select • g: group • esc: back • q: quit"
 		}

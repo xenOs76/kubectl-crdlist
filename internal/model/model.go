@@ -46,10 +46,10 @@ type (
 	ErrMsg error
 )
 
-// EditPendingMsg is sent immediately before kubectl edit runs.
+// EditPendingMsg is sent immediately before the resource editor runs.
 type EditPendingMsg struct{}
 
-// EditFinishedMsg is sent when kubectl edit completes.
+// EditFinishedMsg is sent when the resource editor exits.
 type EditFinishedMsg struct {
 	Err error
 }
